@@ -1,0 +1,20 @@
+{
+  "model_type": "RandomForestRegressor",
+  "feature_count": 7,
+  "feature_names": [
+    "price_to_ma5_ratio",
+    "price_to_ma20_ratio",
+    "volatility",
+    "volume_normalized",
+    "market_sentiment",
+    "market_volatility",
+    "market_correlation"
+  ],
+  "training_samples": 15000,
+  "model_score_r2_in_sample": 0.8823290963774557,
+  "prediction_range": [
+    0.0,
+    1.0
+  ],
+  "built_at": "2025-08-12T20:34:38.631162Z"
+}

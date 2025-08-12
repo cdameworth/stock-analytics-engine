@@ -1,715 +1,925 @@
-# Stock Analytics Engine - ML-powered stock recommendation service
-# This application fetches stock data from Alpha Vantage API and provides ML-based recommendations
+# Lower-cost overrides for Stock Analytics Engine
 
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.aws_region
-  
-  default_tags {
-    tags = {
-      Application = "stock-analytics-engine"
-      Environment = var.environment
-      Team        = "data-science"
-      CostCenter  = "ml-analytics"
-      Owner       = "stock-analytics-team@company.com"
-    }
-  }
-}
-
-# Variables
 variable "aws_region" {
   description = "AWS region"
   type        = string
   default     = "us-east-1"
 }
 
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "production"
+# Data sources
+data "aws_region" "current" {}
+data "aws_availability_zones" "available" {
+  state = "available"
 }
 
-variable "alpha_vantage_api_key" {
-  description = "Alpha Vantage API Key"
-  type        = string
-  default     = "YFT4NTLIWG9Z05LA"
-  sensitive   = true
+data "aws_iam_policy_document" "lambda_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "sagemaker_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["sagemaker.amazonaws.com"]
+    }
+  }
+}
+
+# Random ID for bucket naming
+resource "random_id" "bucket_suffix" {
+  byte_length = 8
+}
+
+# Secrets Manager
+resource "aws_secretsmanager_secret" "alpha_vantage_api_key" {
+  name        = "stock-analytics-alpha-vantage-api-key"
+  description = "Alpha Vantage API Key for Stock Analytics Engine"
+  
+  tags = {
+    Application   = "stock-analytics-engine"
+    Environment   = var.environment
+    CostOptimized = "true"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "alpha_vantage_api_key_version" {
+  secret_id     = aws_secretsmanager_secret.alpha_vantage_api_key.id
+  secret_string = var.alpha_vantage_api_key
+}
+
+# IAM Policies
+resource "aws_iam_policy" "lambda_secrets_access_lowcost" {
+  name = "stock-analytics-lambda-secrets-access-lowcost"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = aws_secretsmanager_secret.alpha_vantage_api_key.arn
+      }
+    ]
+  })
 }
 
 # VPC and Networking
-resource "aws_vpc" "stock_analytics_vpc" {
+resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support   = true
-  
-  tags = {
-    Name = "stock-analytics-vpc"
-  }
+
+  tags = merge(
+    {
+      Name = "stock-analytics-vpc"
+    },
+    var.additional_tags
+  )
 }
 
 resource "aws_subnet" "private_subnet_1" {
-  vpc_id            = aws_vpc.stock_analytics_vpc.id
+  vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.1.0/24"
-  availability_zone = "${var.aws_region}a"
-  
-  tags = {
-    Name = "stock-analytics-private-1"
-  }
+  availability_zone = data.aws_availability_zones.available.names[0]
+
+  tags = merge(
+    {
+      Name = "private-subnet-1"
+    },
+    var.additional_tags
+  )
 }
 
 resource "aws_subnet" "private_subnet_2" {
-  vpc_id            = aws_vpc.stock_analytics_vpc.id
+  vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.2.0/24"
-  availability_zone = "${var.aws_region}b"
-  
-  tags = {
-    Name = "stock-analytics-private-2"
-  }
-}
+  availability_zone = data.aws_availability_zones.available.names[1]
 
-resource "aws_subnet" "public_subnet_1" {
-  vpc_id                  = aws_vpc.stock_analytics_vpc.id
-  cidr_block              = "10.0.101.0/24"
-  availability_zone       = "${var.aws_region}a"
-  map_public_ip_on_launch = true
-  
-  tags = {
-    Name = "stock-analytics-public-1"
-  }
-}
-
-resource "aws_subnet" "public_subnet_2" {
-  vpc_id                  = aws_vpc.stock_analytics_vpc.id
-  cidr_block              = "10.0.102.0/24"
-  availability_zone       = "${var.aws_region}b"
-  map_public_ip_on_launch = true
-  
-  tags = {
-    Name = "stock-analytics-public-2"
-  }
-}
-
-resource "aws_internet_gateway" "stock_analytics_igw" {
-  vpc_id = aws_vpc.stock_analytics_vpc.id
-  
-  tags = {
-    Name = "stock-analytics-igw"
-  }
-}
-
-resource "aws_nat_gateway" "stock_analytics_nat" {
-  allocation_id = aws_eip.nat_eip.id
-  subnet_id     = aws_subnet.public_subnet_1.id
-  
-  tags = {
-    Name = "stock-analytics-nat"
-  }
-}
-
-resource "aws_eip" "nat_eip" {
-  domain = "vpc"
-  
-  tags = {
-    Name = "stock-analytics-nat-eip"
-  }
-}
-
-resource "aws_route_table" "public_rt" {
-  vpc_id = aws_vpc.stock_analytics_vpc.id
-  
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.stock_analytics_igw.id
-  }
-  
-  tags = {
-    Name = "stock-analytics-public-rt"
-  }
-}
-
-resource "aws_route_table" "private_rt" {
-  vpc_id = aws_vpc.stock_analytics_vpc.id
-  
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.stock_analytics_nat.id
-  }
-  
-  tags = {
-    Name = "stock-analytics-private-rt"
-  }
-}
-
-resource "aws_route_table_association" "public_rta_1" {
-  subnet_id      = aws_subnet.public_subnet_1.id
-  route_table_id = aws_route_table.public_rt.id
-}
-
-resource "aws_route_table_association" "public_rta_2" {
-  subnet_id      = aws_subnet.public_subnet_2.id
-  route_table_id = aws_route_table.public_rt.id
-}
-
-resource "aws_route_table_association" "private_rta_1" {
-  subnet_id      = aws_subnet.private_subnet_1.id
-  route_table_id = aws_route_table.private_rt.id
-}
-
-resource "aws_route_table_association" "private_rta_2" {
-  subnet_id      = aws_subnet.private_subnet_2.id
-  route_table_id = aws_route_table.private_rt.id
+  tags = merge(
+    {
+      Name = "private-subnet-2"
+    },
+    var.additional_tags
+  )
 }
 
 # Security Groups
-resource "aws_security_group" "lambda_sg" {
-  name        = "stock-analytics-lambda-sg"
-  description = "Security group for Lambda functions"
-  vpc_id      = aws_vpc.stock_analytics_vpc.id
-  
+resource "aws_security_group" "valkey_sg" {
+  name_prefix = "valkey-sg-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 6379
+    to_port     = 6379
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+    description = "Valkey access from VPC"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  
-  tags = {
-    Name = "stock-analytics-lambda-sg"
+
+  tags = merge(
+    {
+      Name = "valkey-security-group"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_security_group" "lambda_sg" {
+  name_prefix = "lambda-sg-"
+  vpc_id      = aws_vpc.main.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = merge(
+    {
+      Name = "lambda-security-group"
+    },
+    var.additional_tags
+  )
 }
 
 resource "aws_security_group" "rds_sg" {
-  name        = "stock-analytics-rds-sg"
-  description = "Security group for RDS database"
-  vpc_id      = aws_vpc.stock_analytics_vpc.id
-  
+  name_prefix = "rds-sg-"
+  vpc_id      = aws_vpc.main.id
+
   ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda_sg.id]
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
   }
-  
-  tags = {
-    Name = "stock-analytics-rds-sg"
-  }
+
+  tags = merge(
+    {
+      Name = "rds-security-group"
+    },
+    var.additional_tags
+  )
 }
 
-resource "aws_security_group" "redis_sg" {
-  name        = "stock-analytics-redis-sg"
-  description = "Security group for Redis cluster"
-  vpc_id      = aws_vpc.stock_analytics_vpc.id
-  
-  ingress {
-    from_port       = 6379
-    to_port         = 6379
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda_sg.id]
-  }
-  
-  tags = {
-    Name = "stock-analytics-redis-sg"
-  }
+# IAM Roles
+resource "aws_iam_role" "lambda_execution_role" {
+  name               = "lambda-execution-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = var.additional_tags
 }
 
+resource "aws_iam_role_policy_attachment" "lambda_basic" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_secrets_access_attach_lowcost" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_secrets_access_lowcost.arn
+}
+
+resource "aws_iam_role" "sagemaker_execution_role" {
+  name               = "sagemaker-execution-role"
+  assume_role_policy = data.aws_iam_policy_document.sagemaker_assume_role.json
+
+  tags = var.additional_tags
+}
+
+resource "aws_iam_role_policy_attachment" "sagemaker_execution" {
+  role       = aws_iam_role.sagemaker_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+}
+
+# Add S3 access for model artifacts
+resource "aws_iam_role_policy" "sagemaker_s3_policy" {
+  name = "sagemaker-s3-access"
+  role = aws_iam_role.sagemaker_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.ml_models.arn,
+          "${aws_s3_bucket.ml_models.arn}/*",
+          aws_s3_bucket.stock_data_lake.arn,
+          "${aws_s3_bucket.stock_data_lake.arn}/*"
+        ]
+      }
+    ]
+  })
+}
 # S3 Buckets
 resource "aws_s3_bucket" "stock_data_lake" {
   bucket = "stock-analytics-data-lake-${random_id.bucket_suffix.hex}"
-  
-  tags = {
-    Name = "stock-data-lake"
-  }
+
+  tags = merge(
+    {
+      Name = "stock-data-lake"
+    },
+    var.additional_tags
+  )
 }
 
 resource "aws_s3_bucket" "ml_models" {
   bucket = "stock-analytics-ml-models-${random_id.bucket_suffix.hex}"
-  
-  tags = {
-    Name = "ml-models"
-  }
+
+  tags = merge(
+    {
+      Name = "ml-models-bucket"
+    },
+    var.additional_tags
+  )
 }
 
-resource "aws_s3_bucket" "api_logs" {
-  bucket = "stock-analytics-api-logs-${random_id.bucket_suffix.hex}"
-  
-  tags = {
-    Name = "api-logs"
-  }
-}
-
-resource "random_id" "bucket_suffix" {
-  byte_length = 4
-}
-
-resource "aws_s3_bucket_versioning" "stock_data_lake_versioning" {
+resource "aws_s3_bucket_lifecycle_configuration" "stock_data_lake_lifecycle" {
   bucket = aws_s3_bucket.stock_data_lake.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "stock_data_lake_encryption" {
-  bucket = aws_s3_bucket.stock_data_lake.id
-  
   rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+    id     = "move-to-glacier"
+    status = "Enabled"
+
+    filter {
+      prefix = ""  # Apply to all objects
+    }
+
+    transition {
+      days          = var.s3_transition_glacier_days
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = var.s3_expiration_days
     }
   }
 }
 
-# DynamoDB Tables
+# RDS Aurora
+resource "aws_db_subnet_group" "aurora" {
+  name       = "aurora-subnet-group"
+  subnet_ids = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
+
+  tags = merge(
+    {
+      Name = "aurora-subnet-group"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_rds_cluster" "stock_analytics_aurora" {
+  cluster_identifier              = "stock-analytics-aurora"
+  engine                         = "aurora-postgresql"
+  engine_version                 = "15.4"
+  database_name                  = "stockanalytics"
+  master_username                = "postgres"
+  manage_master_user_password    = true
+  
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  db_subnet_group_name   = aws_db_subnet_group.aurora.name
+  
+  skip_final_snapshot = true
+  deletion_protection = var.db_deletion_protection
+
+  tags = merge(
+    {
+      Name = "stock-analytics-aurora"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_rds_cluster_instance" "stock_analytics_aurora_instance_lowcost" {
+  count              = 1
+  identifier         = "stock-analytics-aurora-lowcost-${count.index}"
+  cluster_identifier = aws_rds_cluster.stock_analytics_aurora.id
+  engine             = aws_rds_cluster.stock_analytics_aurora.engine
+  engine_version     = aws_rds_cluster.stock_analytics_aurora.engine_version
+
+  performance_insights_enabled = false
+  monitoring_interval          = 0
+  auto_minor_version_upgrade   = false
+
+  # Use supported instance class for Aurora PostgreSQL
+  instance_class        = var.enable_graviton_instances ? "db.t4g.medium" : "db.t3.small"  # Changed from db.t4g.small
+  copy_tags_to_snapshot = false
+  promotion_tier        = 0
+
+  tags = merge(
+    {
+      Name          = "stock-analytics-aurora-lowcost-${count.index}"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+# ElastiCache Valkey
+resource "aws_elasticache_subnet_group" "stock_analytics_valkey_subnet_group" {
+  name       = "stock-analytics-valkey-subnet-group"
+  subnet_ids = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
+
+  tags = var.additional_tags
+}
+
+resource "aws_elasticache_parameter_group" "valkey_params_lowcost" {
+  family = "valkey7"  # Changed from redis7 to valkey7
+  name   = "valkey-params-lowcost"
+
+  parameter {
+    name  = "maxmemory-policy"
+    value = "volatile-lru"
+  }
+
+  tags = merge(
+    {
+      Name          = "valkey-parameter-group"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_elasticache_replication_group" "stock_analytics_valkey_lowcost" {
+  replication_group_id       = "stock-analytics-valkey-lowcost"
+  description                = "Low-cost Valkey cluster for stock analytics caching"
+
+  engine                = "valkey"  # Changed from default redis to valkey
+  engine_version        = "7.2"    # Latest Valkey version
+  node_type            = var.valkey_node_type  # Changed from var.redis_node_type
+  num_cache_clusters   = var.valkey_num_cache_clusters  # Changed from var.redis_num_cache_clusters
+  port                 = 6379
+  parameter_group_name = aws_elasticache_parameter_group.valkey_params_lowcost.name
+
+  automatic_failover_enabled = false
+  multi_az_enabled          = false
+
+  subnet_group_name  = aws_elasticache_subnet_group.stock_analytics_valkey_subnet_group.name
+  security_group_ids = [aws_security_group.valkey_sg.id]
+
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
+
+  snapshot_retention_limit = 1
+  snapshot_window         = "05:00-06:00"
+  maintenance_window      = "sun:06:00-sun:07:00"
+
+  tags = merge(
+    {
+      Name          = "stock-analytics-valkey-lowcost"
+      Engine        = "valkey"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+# SageMaker
+resource "aws_sagemaker_model" "stock_prediction_model" {
+  name               = "stock-prediction-model"
+  execution_role_arn = aws_iam_role.sagemaker_execution_role.arn
+
+  primary_container {
+    # Use the correct public SageMaker Scikit-learn image
+    image          = "683313688378.dkr.ecr.us-east-1.amazonaws.com/sagemaker-scikit-learn:0.23-1-cpu-py3"
+    model_data_url = "s3://${aws_s3_bucket.ml_models.bucket}/stock_prediction_compatible_model.tar.gz"
+  }
+
+  tags = var.additional_tags
+}
+
+resource "aws_sagemaker_endpoint_configuration" "stock_prediction_endpoint_config_lowcost" {
+  name = "stock-prediction-endpoint-config-lowcost"
+
+  production_variants {
+    variant_name            = "AllTraffic"
+    model_name              = aws_sagemaker_model.stock_prediction_model.name
+    initial_instance_count  = var.enable_sagemaker_serverless ? null : var.sagemaker_instance_count
+    instance_type           = var.enable_sagemaker_serverless ? null : var.sagemaker_instance_type
+
+    dynamic "serverless_config" {
+      for_each = var.enable_sagemaker_serverless ? [1] : []
+      content {
+        memory_size_in_mb = 1024
+        max_concurrency   = 5
+      }
+    }
+  }
+
+  dynamic "data_capture_config" {
+    for_each = var.enable_sagemaker_serverless ? [] : [1]
+    content {
+      enable_capture              = false
+      initial_sampling_percentage = 0
+      destination_s3_uri          = "s3://${aws_s3_bucket.ml_models.bucket}/model-monitor/"
+      
+      capture_options {
+        capture_mode = "Input"
+      }
+      capture_options {
+        capture_mode = "Output"
+      }
+      capture_content_type_header {
+        json_content_types = ["application/json"]
+      }
+    }
+  }
+
+  tags = merge(
+    {
+      Name          = "stock-prediction-endpoint-config-lowcost"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_sagemaker_endpoint" "stock_prediction_endpoint_lowcost" {
+  name                 = "stock-prediction-endpoint-lowcost"
+  endpoint_config_name = aws_sagemaker_endpoint_configuration.stock_prediction_endpoint_config_lowcost.name
+
+  tags = {
+    Name          = "stock-prediction-endpoint-lowcost"
+    CostOptimized = "true"
+  }
+}
+
+# Lambda Function
+data "archive_file" "ml_model_inference" {
+  type        = "zip"
+  source_file = "${path.module}/lambda_functions/ml_model_inference.py"
+  output_path = "${path.module}/ml_model_inference.zip"
+}
+
+data "archive_file" "stock_data_ingestion" {
+  type        = "zip"
+  source_file = "${path.module}/lambda_functions/stock_data_ingestion.py"
+  output_path = "${path.module}/stock_data_ingestion.zip"
+}
+
+data "archive_file" "stock_recommendations_api" {
+  type        = "zip"
+  source_file = "${path.module}/lambda_functions/stock_recommendations_api.py"
+  output_path = "${path.module}/stock_recommendations_api.zip"
+}
+
+# Lambda Function - ML Model Inference (UPDATE THIS SECTION)
+resource "aws_lambda_function" "ml_model_inference_lowcost" {
+  filename         = data.archive_file.ml_model_inference.output_path
+  source_code_hash = data.archive_file.ml_model_inference.output_base64sha256
+  function_name    = "ml-model-inference-lowcost"
+  role             = aws_iam_role.lambda_execution_role.arn
+  handler          = "ml_model_inference.lambda_handler"
+  runtime          = "python3.11"
+  timeout          = var.lambda_timeout
+  memory_size      = var.lambda_memory_size
+
+  vpc_config {
+    subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
+    security_group_ids = [aws_security_group.lambda_sg.id]
+  }
+
+  environment {
+    variables = {
+      SAGEMAKER_ENDPOINT               = aws_sagemaker_endpoint.stock_prediction_endpoint_lowcost.name
+      DYNAMODB_TABLE                   = aws_dynamodb_table.stock_recommendations.name
+      S3_BUCKET                        = aws_s3_bucket.stock_data_lake.bucket
+      RDS_ENDPOINT                     = aws_rds_cluster.stock_analytics_aurora.endpoint
+      VALKEY_ENDPOINT                  = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
+      REDIS_ENDPOINT                   = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
+      ALPHA_VANTAGE_API_KEY_SECRET_ARN = aws_secretsmanager_secret.alpha_vantage_api_key.arn
+    }
+  }
+
+  ephemeral_storage {
+    size = 512
+  }
+
+  # Use AWS-provided NumPy layer (for x86_64)
+  #layers = [
+  #  "arn:aws:lambda:us-east-1:668099181075:layer:AWSLambda-Python311-SciPy1x:112"
+  #]
+
+  architectures = var.enable_graviton_instances ? ["arm64"] : ["x86_64"]
+
+  tracing_config {
+    mode = "Active"
+  }
+
+  tags = merge(
+    {
+      Name          = "ml-model-inference-lowcost"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+# Lambda Function - Stock Data Ingestion (UPDATE THIS SECTION)
+resource "aws_lambda_function" "stock_data_ingestion" {
+  filename         = data.archive_file.stock_data_ingestion.output_path
+  source_code_hash = data.archive_file.stock_data_ingestion.output_base64sha256
+  function_name    = "stock-data-ingestion"
+  role            = aws_iam_role.lambda_execution_role.arn
+  handler         = "stock_data_ingestion.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = var.lambda_timeout
+  memory_size     = var.lambda_memory_size
+
+  vpc_config {
+    subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
+    security_group_ids = [aws_security_group.lambda_sg.id]
+  }
+
+  environment {
+    variables = {
+      ALPHA_VANTAGE_API_KEY            = var.alpha_vantage_api_key
+      S3_BUCKET                        = aws_s3_bucket.stock_data_lake.bucket
+      DYNAMODB_TABLE                   = aws_dynamodb_table.stock_recommendations.name
+      REDIS_ENDPOINT                   = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
+    }
+  }
+
+  tags = merge(
+    {
+      Name          = "stock-data-ingestion"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+
+# Lambda Function - Stock Recommendations API (UPDATE THIS SECTION)
+resource "aws_lambda_function" "stock_recommendations_api" {
+  filename         = data.archive_file.stock_recommendations_api.output_path
+  source_code_hash = data.archive_file.stock_recommendations_api.output_base64sha256
+  function_name    = "stock-recommendations-api"
+  role            = aws_iam_role.lambda_execution_role.arn
+  handler         = "stock_recommendations_api.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 512
+
+  vpc_config {
+    subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
+    security_group_ids = [aws_security_group.lambda_sg.id]
+  }
+
+  environment {
+    variables = {
+      DYNAMODB_TABLE = aws_dynamodb_table.stock_recommendations.name
+      REDIS_ENDPOINT = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
+    }
+  }
+
+  tags = merge(
+    {
+      Name          = "stock-recommendations-api"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+# Add Lambda permissions for DynamoDB and SageMaker
+resource "aws_iam_role_policy" "lambda_sagemaker_dynamodb" {
+  name = "lambda-sagemaker-dynamodb-policy"
+  role = aws_iam_role.lambda_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sagemaker:InvokeEndpoint"
+        ]
+        Resource = aws_sagemaker_endpoint.stock_prediction_endpoint_lowcost.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Scan",
+          "dynamodb:Query"
+        ]
+        Resource = [
+          aws_dynamodb_table.stock_recommendations.arn,
+          "${aws_dynamodb_table.stock_recommendations.arn}/index/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = "arn:aws:lambda:*:*:function:ml-model-inference*"
+      }
+    ]
+  })
+}
+
+# Add missing DynamoDB table for your Lambda functions
 resource "aws_dynamodb_table" "stock_recommendations" {
   name           = "stock-recommendations"
-  billing_mode   = "PAY_PER_REQUEST"
+  billing_mode   = "PAY_PER_REQUEST"  # Cost-optimized
   hash_key       = "recommendation_id"
-  range_key      = "timestamp"
-  
+
   attribute {
     name = "recommendation_id"
     type = "S"
   }
-  
-  attribute {
-    name = "timestamp"
-    type = "S"
-  }
-  
+
   attribute {
     name = "symbol"
     type = "S"
   }
-  
-  global_secondary_index {
-    name     = "symbol-timestamp-index"
-    hash_key = "symbol"
-    range_key = "timestamp"
-  }
-  
-  point_in_time_recovery {
-    enabled = true
-  }
-  
-  tags = {
-    Name = "stock-recommendations"
-  }
-}
 
-resource "aws_dynamodb_table" "api_cache" {
-  name           = "api-cache"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "cache_key"
-  
   attribute {
-    name = "cache_key"
+    name = "timestamp"
     type = "S"
   }
-  
+
+  # GSI for querying by symbol
+  global_secondary_index {
+    name               = "symbol-timestamp-index"
+    hash_key           = "symbol"
+    range_key          = "timestamp"
+    projection_type    = "ALL"  # Add this required argument
+  }
+
+  # TTL for automatic cleanup
   ttl {
     attribute_name = "ttl"
     enabled        = true
   }
-  
-  tags = {
-    Name = "api-cache"
-  }
-}
 
-# RDS Database
-resource "aws_db_subnet_group" "stock_analytics_db_subnet_group" {
-  name       = "stock-analytics-db-subnet-group"
-  subnet_ids = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
-  
-  tags = {
-    Name = "stock-analytics-db-subnet-group"
-  }
-}
-
-resource "aws_rds_cluster" "stock_analytics_aurora" {
-  cluster_identifier     = "stock-analytics-aurora-cluster"
-  engine                = "aurora-postgresql"
-  engine_version        = "15.4"
-  database_name         = "stock_analytics"
-  master_username       = "stockadmin"
-  manage_master_user_password = true
-  
-  db_subnet_group_name   = aws_db_subnet_group.stock_analytics_db_subnet_group.name
-  vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  
-  backup_retention_period = 7
-  preferred_backup_window = "03:00-04:00"
-  preferred_maintenance_window = "sun:04:00-sun:05:00"
-  
-  enabled_cloudwatch_logs_exports = ["postgresql"]
-  
-  tags = {
-    Name = "stock-analytics-aurora"
-  }
-}
-
-resource "aws_rds_cluster_instance" "stock_analytics_aurora_instance" {
-  count              = 2
-  identifier         = "stock-analytics-aurora-${count.index}"
-  cluster_identifier = aws_rds_cluster.stock_analytics_aurora.id
-  instance_class     = "db.r6g.large"
-  engine             = aws_rds_cluster.stock_analytics_aurora.engine
-  engine_version     = aws_rds_cluster.stock_analytics_aurora.engine_version
-  
-  performance_insights_enabled = true
-  monitoring_interval          = 60
-  monitoring_role_arn         = aws_iam_role.rds_monitoring_role.arn
-  
-  tags = {
-    Name = "stock-analytics-aurora-${count.index}"
-  }
-}
-
-# ElastiCache Redis
-resource "aws_elasticache_subnet_group" "stock_analytics_redis_subnet_group" {
-  name       = "stock-analytics-redis-subnet-group"
-  subnet_ids = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
-  
-  tags = {
-    Name = "stock-analytics-redis-subnet-group"
-  }
-}
-
-resource "aws_elasticache_replication_group" "stock_analytics_redis" {
-  replication_group_id       = "stock-analytics-redis"
-  description                = "Redis cluster for stock analytics caching"
-  
-  node_type                  = "cache.r7g.large"
-  port                       = 6379
-  parameter_group_name       = "default.redis7"
-  
-  num_cache_clusters         = 2
-  automatic_failover_enabled = true
-  multi_az_enabled          = true
-  
-  subnet_group_name = aws_elasticache_subnet_group.stock_analytics_redis_subnet_group.name
-  security_group_ids = [aws_security_group.redis_sg.id]
-  
-  at_rest_encryption_enabled = true
-  transit_encryption_enabled = true
-  
-  log_delivery_configuration {
-    destination      = aws_cloudwatch_log_group.redis_slow_log.name
-    destination_type = "cloudwatch-logs"
-    log_format       = "text"
-    log_type         = "slow-log"
-  }
-  
-  tags = {
-    Name = "stock-analytics-redis"
-  }
-}
-
-# SageMaker ML Model
-resource "aws_sagemaker_model" "stock_prediction_model" {
-  name               = "stock-prediction-model"
-  execution_role_arn = aws_iam_role.sagemaker_execution_role.arn
-  
-  primary_container {
-    image = "763104351884.dkr.ecr.us-east-1.amazonaws.com/sklearn-inference:0.23-1-cpu-py3"
-    model_data_url = "s3://${aws_s3_bucket.ml_models.bucket}/models/stock-prediction-model.tar.gz"
-    
-    environment = {
-      SAGEMAKER_PROGRAM                 = "inference.py"
-      SAGEMAKER_SUBMIT_DIRECTORY        = "s3://${aws_s3_bucket.ml_models.bucket}/code/sourcedir.tar.gz"
-      SAGEMAKER_CONTAINER_LOG_LEVEL     = "20"
-      SAGEMAKER_REGION                  = var.aws_region
-    }
-  }
-  
-  tags = {
-    Name = "stock-prediction-model"
-  }
-}
-
-resource "aws_sagemaker_endpoint_configuration" "stock_prediction_endpoint_config" {
-  name = "stock-prediction-endpoint-config"
-  
-  production_variants {
-    variant_name           = "AllTraffic"
-    model_name            = aws_sagemaker_model.stock_prediction_model.name
-    initial_instance_count = 2
-    instance_type         = "ml.m5.large"
-    initial_variant_weight = 1
-  }
-  
-  data_capture_config {
-    enable_capture                = true
-    initial_sampling_percentage   = 100
-    destination_s3_uri           = "s3://${aws_s3_bucket.ml_models.bucket}/model-monitor/"
-    
-    capture_options {
-      capture_mode = "Input"
-    }
-    
-    capture_options {
-      capture_mode = "Output"
-    }
-    
-    capture_content_type_header {
-      json_content_types = ["application/json"]
-    }
-  }
-  
-  tags = {
-    Name = "stock-prediction-endpoint-config"
-  }
-}
-
-resource "aws_sagemaker_endpoint" "stock_prediction_endpoint" {
-  name                 = "stock-prediction-endpoint"
-  endpoint_config_name = aws_sagemaker_endpoint_configuration.stock_prediction_endpoint_config.name
-  
-  tags = {
-    Name = "stock-prediction-endpoint"
-  }
-}
-
-# Lambda Functions
-resource "aws_lambda_function" "stock_data_ingestion" {
-  filename         = "stock_data_ingestion.zip"
-  function_name    = "stock-data-ingestion"
-  role            = aws_iam_role.lambda_execution_role.arn
-  handler         = "index.handler"
-  runtime         = "python3.11"
-  timeout         = 300
-  memory_size     = 1024
-  
-  vpc_config {
-    subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
-    security_group_ids = [aws_security_group.lambda_sg.id]
-  }
-  
-  environment {
-    variables = {
-      ALPHA_VANTAGE_API_KEY = var.alpha_vantage_api_key
-      S3_BUCKET            = aws_s3_bucket.stock_data_lake.bucket
-      REDIS_ENDPOINT       = aws_elasticache_replication_group.stock_analytics_redis.primary_endpoint_address
-      DYNAMODB_TABLE       = aws_dynamodb_table.api_cache.name
-    }
-  }
-  
-  dead_letter_config {
-    target_arn = aws_sqs_queue.stock_data_dlq.arn
-  }
-  
-  tracing_config {
-    mode = "Active"
-  }
-  
-  tags = {
-    Name = "stock-data-ingestion"
-  }
-}
-
-resource "aws_lambda_function" "ml_model_inference" {
-  filename         = "ml_model_inference.zip"
-  function_name    = "ml-model-inference"
-  role            = aws_iam_role.lambda_execution_role.arn
-  handler         = "index.handler"
-  runtime         = "python3.11"
-  timeout         = 900
-  memory_size     = 2048
-  
-  vpc_config {
-    subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
-    security_group_ids = [aws_security_group.lambda_sg.id]
-  }
-  
-  environment {
-    variables = {
-      SAGEMAKER_ENDPOINT     = aws_sagemaker_endpoint.stock_prediction_endpoint.name
-      DYNAMODB_TABLE         = aws_dynamodb_table.stock_recommendations.name
-      S3_BUCKET             = aws_s3_bucket.stock_data_lake.bucket
-      RDS_ENDPOINT          = aws_rds_cluster.stock_analytics_aurora.endpoint
-      REDIS_ENDPOINT        = aws_elasticache_replication_group.stock_analytics_redis.primary_endpoint_address
-    }
-  }
-  
-  dead_letter_config {
-    target_arn = aws_sqs_queue.ml_inference_dlq.arn
-  }
-  
-  tracing_config {
-    mode = "Active"
-  }
-  
-  tags = {
-    Name = "ml-model-inference"
-  }
-}
-
-resource "aws_lambda_function" "stock_recommendations_api" {
-  filename         = "stock_recommendations_api.zip"
-  function_name    = "stock-recommendations-api"
-  role            = aws_iam_role.lambda_execution_role.arn
-  handler         = "index.handler"
-  runtime         = "python3.11"
-  timeout         = 30
-  memory_size     = 512
-  
-  vpc_config {
-    subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
-    security_group_ids = [aws_security_group.lambda_sg.id]
-  }
-  
-  environment {
-    variables = {
-      DYNAMODB_TABLE = aws_dynamodb_table.stock_recommendations.name
-      REDIS_ENDPOINT = aws_elasticache_replication_group.stock_analytics_redis.primary_endpoint_address
-    }
-  }
-  
-  tracing_config {
-    mode = "Active"
-  }
-  
-  tags = {
-    Name = "stock-recommendations-api"
-  }
+  tags = merge(
+    {
+      Name          = "stock-recommendations"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
 # API Gateway
-resource "aws_api_gateway_rest_api" "stock_analytics_api" {
-  name        = "stock-analytics-api"
-  description = "API for stock analytics and recommendations"
-  
+resource "aws_api_gateway_rest_api" "stock_recommendations_api" {
+  name        = "stock-recommendations-api"
+  description = "API for stock recommendations"
+
   endpoint_configuration {
     types = ["REGIONAL"]
   }
-  
-  tags = {
-    Name = "stock-analytics-api"
-  }
+
+  tags = merge(
+    {
+      Name          = "stock-recommendations-api"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
+# API Gateway Resources
 resource "aws_api_gateway_resource" "recommendations" {
-  rest_api_id = aws_api_gateway_rest_api.stock_analytics_api.id
-  parent_id   = aws_api_gateway_rest_api.stock_analytics_api.root_resource_id
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
+  parent_id   = aws_api_gateway_rest_api.stock_recommendations_api.root_resource_id
   path_part   = "recommendations"
 }
 
+resource "aws_api_gateway_resource" "recommendations_symbol" {
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
+  parent_id   = aws_api_gateway_resource.recommendations.id
+  path_part   = "{symbol}"
+}
+
+# API Gateway Methods - GET /recommendations
 resource "aws_api_gateway_method" "get_recommendations" {
-  rest_api_id   = aws_api_gateway_rest_api.stock_analytics_api.id
+  rest_api_id   = aws_api_gateway_rest_api.stock_recommendations_api.id
   resource_id   = aws_api_gateway_resource.recommendations.id
   http_method   = "GET"
   authorization = "NONE"
+
+  request_parameters = {
+    "method.request.querystring.limit" = false
+    "method.request.querystring.page"  = false
+  }
 }
 
-resource "aws_api_gateway_integration" "lambda_integration" {
-  rest_api_id = aws_api_gateway_rest_api.stock_analytics_api.id
+# API Gateway Methods - GET /recommendations/{symbol}
+resource "aws_api_gateway_method" "get_recommendation_by_symbol" {
+  rest_api_id   = aws_api_gateway_rest_api.stock_recommendations_api.id
+  resource_id   = aws_api_gateway_resource.recommendations_symbol.id
+  http_method   = "GET"
+  authorization = "NONE"
+
+  request_parameters = {
+    "method.request.path.symbol" = true
+  }
+}
+
+# API Gateway Integration - GET /recommendations
+resource "aws_api_gateway_integration" "get_recommendations_integration" {
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
   resource_id = aws_api_gateway_resource.recommendations.id
   http_method = aws_api_gateway_method.get_recommendations.http_method
-  
+
   integration_http_method = "POST"
   type                   = "AWS_PROXY"
   uri                    = aws_lambda_function.stock_recommendations_api.invoke_arn
 }
 
-resource "aws_api_gateway_deployment" "stock_analytics_api_deployment" {
+# API Gateway Integration - GET /recommendations/{symbol}
+resource "aws_api_gateway_integration" "get_recommendation_by_symbol_integration" {
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
+  resource_id = aws_api_gateway_resource.recommendations_symbol.id
+  http_method = aws_api_gateway_method.get_recommendation_by_symbol.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = aws_lambda_function.stock_recommendations_api.invoke_arn
+}
+
+# Lambda permissions for API Gateway
+resource "aws_lambda_permission" "api_gateway_get_recommendations" {
+  statement_id  = "AllowExecutionFromAPIGateway-recommendations"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.stock_recommendations_api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.stock_recommendations_api.execution_arn}/*/*"
+}
+
+# API Gateway Deployment
+resource "aws_api_gateway_deployment" "stock_recommendations_api_deployment" {
   depends_on = [
-    aws_api_gateway_method.get_recommendations,
-    aws_api_gateway_integration.lambda_integration,
+    aws_api_gateway_integration.get_recommendations_integration,
+    aws_api_gateway_integration.get_recommendation_by_symbol_integration,
   ]
-  
-  rest_api_id = aws_api_gateway_rest_api.stock_analytics_api.id
-  stage_name  = var.environment
-  
+
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
+
+  # Trigger redeployment when any method/integration changes
+  triggers = {
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.recommendations.id,
+      aws_api_gateway_method.get_recommendations.id,
+      aws_api_gateway_integration.get_recommendations_integration.id,
+      aws_api_gateway_resource.recommendations_symbol.id,
+      aws_api_gateway_method.get_recommendation_by_symbol.id,
+      aws_api_gateway_integration.get_recommendation_by_symbol_integration.id,
+    ]))
+  }
+
   lifecycle {
     create_before_destroy = true
   }
 }
 
-resource "aws_lambda_permission" "allow_api_gateway" {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.stock_recommendations_api.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.stock_analytics_api.execution_arn}/*/*"
+# API Gateway Stage
+resource "aws_api_gateway_stage" "stock_recommendations_api_stage" {
+  deployment_id = aws_api_gateway_deployment.stock_recommendations_api_deployment.id
+  rest_api_id   = aws_api_gateway_rest_api.stock_recommendations_api.id
+  stage_name    = "prod"
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_gateway_logs_lowcost.arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      caller         = "$context.identity.caller"
+      user           = "$context.identity.user"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      resourcePath   = "$context.resourcePath"
+      status         = "$context.status"
+      protocol       = "$context.protocol"
+      responseLength = "$context.responseLength"
+    })
+  }
+
+  # Ensure the account settings are configured before creating the stage
+  depends_on = [aws_api_gateway_account.api_gateway_account]
+
+  tags = merge(
+    {
+      Name          = "stock-recommendations-api-prod"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
-# SQS Queues
-resource "aws_sqs_queue" "stock_data_processing" {
-  name                      = "stock-data-processing"
-  delay_seconds             = 0
-  max_message_size          = 262144
-  message_retention_seconds = 1209600
-  receive_wait_time_seconds = 20
-  
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.stock_data_dlq.arn
-    maxReceiveCount     = 3
-  })
-  
-  tags = {
-    Name = "stock-data-processing"
+# CORS support (if needed for web frontend)
+resource "aws_api_gateway_method" "options_recommendations" {
+  rest_api_id   = aws_api_gateway_rest_api.stock_recommendations_api.id
+  resource_id   = aws_api_gateway_resource.recommendations.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "options_recommendations_integration" {
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
+  resource_id = aws_api_gateway_resource.recommendations.id
+  http_method = aws_api_gateway_method.options_recommendations.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = jsonencode({
+      statusCode = 200
+    })
   }
 }
 
-resource "aws_sqs_queue" "stock_data_dlq" {
-  name = "stock-data-processing-dlq"
-  
-  tags = {
-    Name = "stock-data-processing-dlq"
+# Fix CORS integration response (use response_parameters instead of response_headers)
+resource "aws_api_gateway_method_response" "options_recommendations_response" {
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
+  resource_id = aws_api_gateway_resource.recommendations.id
+  http_method = aws_api_gateway_method.options_recommendations.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
-resource "aws_sqs_queue" "ml_inference_dlq" {
-  name = "ml-inference-dlq"
-  
-  tags = {
-    Name = "ml-inference-dlq"
+# Fix CORS integration response - remove the line that says "response_headers"
+resource "aws_api_gateway_integration_response" "options_recommendations_integration_response" {
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
+  resource_id = aws_api_gateway_resource.recommendations.id
+  http_method = aws_api_gateway_method.options_recommendations.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
+
+  depends_on = [aws_api_gateway_method_response.options_recommendations_response]
 }
 
-# SNS Topics
-resource "aws_sns_topic" "stock_alerts" {
-  name = "stock-alerts"
-  
-  tags = {
-    Name = "stock-alerts"
-  }
-}
-
-resource "aws_sns_topic" "system_alerts" {
-  name = "system-alerts"
-  
-  tags = {
-    Name = "system-alerts"
-  }
-}
-
-# EventBridge Rules
+# EventBridge rule to trigger stock data ingestion
 resource "aws_cloudwatch_event_rule" "stock_data_ingestion_schedule" {
   name                = "stock-data-ingestion-schedule"
-  description         = "Trigger stock data ingestion every 15 minutes during market hours"
-  schedule_expression = "rate(15 minutes)"
-  
-  tags = {
-    Name = "stock-data-ingestion-schedule"
-  }
+  description         = "Trigger stock data ingestion Lambda function"
+  schedule_expression = var.stock_data_ingestion_schedule  # e.g., "rate(1 hour)" or "cron(0 9-16 ? * MON-FRI *)"
+
+  tags = merge(
+    {
+      Name          = "stock-data-ingestion-schedule"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
-resource "aws_cloudwatch_event_target" "lambda_target" {
+# EventBridge target - Lambda function
+resource "aws_cloudwatch_event_target" "stock_data_ingestion_target" {
   rule      = aws_cloudwatch_event_rule.stock_data_ingestion_schedule.name
-  target_id = "StockDataIngestionTarget"
+  target_id = "StockDataIngestionLambdaTarget"
   arn       = aws_lambda_function.stock_data_ingestion.arn
+
+  input = jsonencode({
+    source      = "eventbridge-schedule"
+    symbols     = ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "NVDA", "META"]  # Default symbols to fetch
+    data_type   = "daily"
+    trigger     = "scheduled"
+  })
 }
 
-resource "aws_lambda_permission" "allow_eventbridge" {
+# Lambda permission for EventBridge to invoke the function
+resource "aws_lambda_permission" "allow_eventbridge_stock_ingestion" {
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.stock_data_ingestion.function_name
@@ -717,335 +927,239 @@ resource "aws_lambda_permission" "allow_eventbridge" {
   source_arn    = aws_cloudwatch_event_rule.stock_data_ingestion_schedule.arn
 }
 
-# CloudWatch Resources
-resource "aws_cloudwatch_log_group" "lambda_logs" {
-  for_each = toset([
-    "/aws/lambda/stock-data-ingestion",
-    "/aws/lambda/ml-model-inference", 
-    "/aws/lambda/stock-recommendations-api"
-  ])
-  
-  name              = each.value
-  retention_in_days = 14
-  
-  tags = {
-    Name = each.value
-  }
+# Optional: Add another rule for end-of-day processing
+resource "aws_cloudwatch_event_rule" "stock_data_ingestion_eod" {
+  name                = "stock-data-ingestion-eod"
+  description         = "Trigger end-of-day stock data processing"
+  schedule_expression = "cron(0 21 ? * MON-FRI *)"  # 9 PM UTC on weekdays (after market close)
+
+  tags = merge(
+    {
+      Name          = "stock-data-ingestion-eod"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
-resource "aws_cloudwatch_log_group" "api_gateway_logs" {
-  name              = "/aws/apigateway/stock-analytics-api"
-  retention_in_days = 30
-  
-  tags = {
-    Name = "stock-analytics-api-logs"
-  }
-}
+resource "aws_cloudwatch_event_target" "stock_data_ingestion_eod_target" {
+  rule      = aws_cloudwatch_event_rule.stock_data_ingestion_eod.name
+  target_id = "StockDataIngestionEODTarget"
+  arn       = aws_lambda_function.stock_data_ingestion.arn
 
-resource "aws_cloudwatch_log_group" "redis_slow_log" {
-  name              = "/aws/elasticache/redis/slow-log"
-  retention_in_days = 7
-  
-  tags = {
-    Name = "redis-slow-log"
-  }
-}
-
-# CloudWatch Dashboards
-resource "aws_cloudwatch_dashboard" "stock_analytics_dashboard" {
-  dashboard_name = "StockAnalyticsEngine"
-  
-  dashboard_body = jsonencode({
-    widgets = [
-      {
-        type   = "metric"
-        x      = 0
-        y      = 0
-        width  = 12
-        height = 6
-        
-        properties = {
-          metrics = [
-            ["AWS/Lambda", "Duration", "FunctionName", "stock-data-ingestion"],
-            [".", "Errors", ".", "."],
-            [".", "Invocations", ".", "."]
-          ]
-          view    = "timeSeries"
-          stacked = false
-          region  = var.aws_region
-          title   = "Lambda Performance Metrics"
-          period  = 300
-        }
-      },
-      {
-        type   = "metric"
-        x      = 0
-        y      = 6
-        width  = 12
-        height = 6
-        
-        properties = {
-          metrics = [
-            ["AWS/ApiGateway", "Count", "ApiName", "stock-analytics-api"],
-            [".", "Latency", ".", "."],
-            [".", "4XXError", ".", "."],
-            [".", "5XXError", ".", "."]
-          ]
-          view    = "timeSeries"
-          stacked = false
-          region  = var.aws_region
-          title   = "API Gateway Metrics"
-          period  = 300
-        }
-      }
-    ]
+  input = jsonencode({
+    source      = "eventbridge-eod"
+    symbols     = ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "NVDA", "META", "SPY", "QQQ"]
+    data_type   = "daily"
+    trigger     = "end-of-day"
+    full_sync   = true
   })
 }
 
-# CloudWatch Alarms
-resource "aws_cloudwatch_metric_alarm" "lambda_error_rate" {
-  alarm_name          = "stock-analytics-lambda-error-rate"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "Errors"
-  namespace           = "AWS/Lambda"
-  period              = "300"
-  statistic           = "Sum"
-  threshold           = "5"
-  alarm_description   = "This metric monitors lambda error rate"
-  
-  dimensions = {
-    FunctionName = aws_lambda_function.stock_data_ingestion.function_name
-  }
-  
-  alarm_actions = [aws_sns_topic.system_alerts.arn]
-  
-  tags = {
-    Name = "lambda-error-rate-alarm"
-  }
+resource "aws_lambda_permission" "allow_eventbridge_stock_ingestion_eod" {
+  statement_id  = "AllowExecutionFromEventBridgeEOD"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.stock_data_ingestion.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.stock_data_ingestion_eod.arn
 }
 
-resource "aws_cloudwatch_metric_alarm" "api_gateway_4xx_errors" {
-  alarm_name          = "stock-analytics-api-4xx-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "4XXError"
-  namespace           = "AWS/ApiGateway"
-  period              = "300"
-  statistic           = "Sum"
-  threshold           = "10"
-  alarm_description   = "This metric monitors API Gateway 4XX errors"
+# Optional: Trigger ML inference after data ingestion
+resource "aws_cloudwatch_event_rule" "trigger_ml_inference" {
+  name        = "trigger-ml-inference"
+  description = "Trigger ML inference after stock data ingestion"
   
-  dimensions = {
-    ApiName = aws_api_gateway_rest_api.stock_analytics_api.name
-  }
-  
-  alarm_actions = [aws_sns_topic.system_alerts.arn]
-  
-  tags = {
-    Name = "api-gateway-4xx-errors-alarm"
-  }
+  event_pattern = jsonencode({
+    source      = ["custom.stock-analytics"]
+    detail-type = ["Stock Data Ingestion Complete"]
+    detail = {
+      status = ["SUCCESS"]
+    }
+  })
+
+  tags = merge(
+    {
+      Name          = "trigger-ml-inference"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
-# IAM Roles and Policies
-resource "aws_iam_role" "lambda_execution_role" {
-  name = "stock-analytics-lambda-execution-role"
-  
+# IAM role for API Gateway CloudWatch logging
+resource "aws_iam_role" "api_gateway_cloudwatch_role" {
+  name = "api-gateway-cloudwatch-role"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = "apigateway.amazonaws.com"
         }
+        Action = "sts:AssumeRole"
       }
     ]
   })
-  
-  tags = {
-    Name = "lambda-execution-role"
-  }
+
+  tags = merge(
+    {
+      Name          = "api-gateway-cloudwatch-role"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
-resource "aws_iam_role_policy" "lambda_policy" {
-  name = "stock-analytics-lambda-policy"
-  role = aws_iam_role.lambda_execution_role.id
-  
+resource "aws_iam_user_policy" "admin_allow_lambda_layer_get" {
+  user = "admin"
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-          "ec2:CreateNetworkInterface",
-          "ec2:DescribeNetworkInterfaces",
-          "ec2:DeleteNetworkInterface",
-          "ec2:AttachNetworkInterface",
-          "ec2:DetachNetworkInterface"
+        Sid      = "AllowGetSpecificSciPyLayer"
+        Effect   = "Allow"
+        Action   = [
+          "lambda:GetLayerVersion"
         ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject"
-        ]
-        Resource = [
-          "${aws_s3_bucket.stock_data_lake.arn}/*",
-          "${aws_s3_bucket.ml_models.arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan"
-        ]
-        Resource = [
-          aws_dynamodb_table.stock_recommendations.arn,
-          aws_dynamodb_table.api_cache.arn,
-          "${aws_dynamodb_table.stock_recommendations.arn}/index/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "sagemaker:InvokeEndpoint"
-        ]
-        Resource = aws_sagemaker_endpoint.stock_prediction_endpoint.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "sqs:SendMessage",
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage"
-        ]
-        Resource = [
-          aws_sqs_queue.stock_data_processing.arn,
-          aws_sqs_queue.stock_data_dlq.arn,
-          aws_sqs_queue.ml_inference_dlq.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "sns:Publish"
-        ]
-        Resource = [
-          aws_sns_topic.stock_alerts.arn,
-          aws_sns_topic.system_alerts.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "xray:PutTraceSegments",
-          "xray:PutTelemetryRecords"
-        ]
-        Resource = "*"
+        Resource = "arn:aws:lambda:us-east-1:668099181075:layer:AWSLambda-Python311-SciPy1x:112"
       }
     ]
   })
 }
 
-resource "aws_iam_role" "sagemaker_execution_role" {
-  name = "stock-analytics-sagemaker-execution-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "sagemaker.amazonaws.com"
-        }
-      }
-    ]
-  })
-  
-  tags = {
-    Name = "sagemaker-execution-role"
+# Attach the managed policy for API Gateway CloudWatch logging
+resource "aws_iam_role_policy_attachment" "api_gateway_cloudwatch_policy" {
+  role       = aws_iam_role.api_gateway_cloudwatch_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+}
+
+# Set the CloudWatch role ARN in API Gateway account settings
+resource "aws_api_gateway_account" "api_gateway_account" {
+  cloudwatch_role_arn = aws_iam_role.api_gateway_cloudwatch_role.arn
+
+  depends_on = [aws_iam_role_policy_attachment.api_gateway_cloudwatch_policy]
+}
+
+# CloudWatch Log Group for API Gateway (make sure this exists)
+resource "aws_cloudwatch_log_group" "api_gateway_logs_lowcost" {
+  name              = "/aws/apigateway/stock-recommendations-api"
+  retention_in_days = var.api_gateway_log_retention
+
+  tags = merge(
+    {
+      Name          = "api-gateway-logs-lowcost"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+# Attach the managed policy for API Gateway CloudWatch logging
+resource "aws_cloudwatch_event_target" "trigger_ml_inference_target" {
+  rule      = aws_cloudwatch_event_rule.trigger_ml_inference.name
+  target_id = "TriggerMLInferenceTarget"
+  arn       = aws_lambda_function.ml_model_inference_lowcost.arn
+
+  input_transformer {
+    input_paths = {
+      symbols = "$.detail.symbols"
+    }
+    input_template = jsonencode({
+      source  = "eventbridge-trigger"
+      symbols = "<symbols>"
+      trigger = "post-ingestion"
+    })
   }
 }
 
-resource "aws_iam_role_policy_attachment" "sagemaker_execution_role_policy" {
-  role       = aws_iam_role.sagemaker_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+resource "aws_lambda_permission" "allow_eventbridge_ml_inference" {
+  statement_id  = "AllowExecutionFromEventBridgeMLInference"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ml_model_inference_lowcost.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.trigger_ml_inference.arn
 }
 
-resource "aws_iam_role" "rds_monitoring_role" {
-  name = "stock-analytics-rds-monitoring-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "monitoring.rds.amazonaws.com"
-        }
-      }
-    ]
-  })
-  
-  tags = {
-    Name = "rds-monitoring-role"
+# CloudWatch Log Groups
+resource "aws_cloudwatch_log_group" "lambda_logs_lowcost" {
+  for_each = toset([
+    "/aws/lambda/stock-data-ingestion",
+    "/aws/lambda/ml-model-inference-lowcost",
+    "/aws/lambda/stock-recommendations-api"
+  ])
+
+  name              = each.value
+  retention_in_days = var.lambda_log_retention
+
+  tags = merge(
+    {
+      Name          = each.value
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
+}
+
+# Cost Monitoring
+resource "aws_cloudwatch_metric_alarm" "cost_alarm" {
+  alarm_name          = "stock-analytics-cost-alarm"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "EstimatedCharges"
+  namespace           = "AWS/Billing"
+  period              = "86400"  # 24 hours
+  statistic           = "Maximum"
+  threshold           = var.cost_alarm_threshold
+  alarm_description   = "This metric monitors estimated charges for stock analytics engine"
+  alarm_actions       = [aws_sns_topic.cost_alerts.arn]
+
+  dimensions = {
+    Currency = "USD"
   }
+
+  tags = merge(
+    {
+      Name          = "stock-analytics-cost-alarm"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
-resource "aws_iam_role_policy_attachment" "rds_monitoring_role_policy" {
-  role       = aws_iam_role.rds_monitoring_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+# SNS Topic for cost alerts
+resource "aws_sns_topic" "cost_alerts" {
+  name = "stock-analytics-cost-alerts"
+
+  tags = merge(
+    {
+      Name          = "stock-analytics-cost-alerts"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
 
-# X-Ray Tracing
-resource "aws_xray_sampling_rule" "stock_analytics_sampling" {
-  rule_name      = "stock-analytics-sampling"
-  priority       = 9000
-  version        = 1
-  reservoir_size = 1
-  fixed_rate     = 0.1
-  url_path       = "*"
-  host           = "*"
-  http_method    = "*"
-  service_type   = "*"
-  service_name   = "*"
-  resource_arn   = "*"
+# SNS Topic Subscription (add your email)
+resource "aws_sns_topic_subscription" "cost_alerts_email" {
+  count     = var.cost_alert_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.cost_alerts.arn
+  protocol  = "email"
+  endpoint  = var.cost_alert_email
 }
 
-# Outputs
-output "api_gateway_url" {
-  description = "URL of the API Gateway"
-  value       = "https://${aws_api_gateway_rest_api.stock_analytics_api.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
-}
+# Daily cost report Lambda (optional)
+resource "aws_cloudwatch_event_rule" "daily_cost_report" {
+  name                = "daily-cost-report"
+  description         = "Trigger daily cost report"
+  schedule_expression = "cron(0 12 * * ? *)"  # Daily at noon UTC
 
-output "sagemaker_endpoint_name" {
-  description = "Name of the SageMaker endpoint"
-  value       = aws_sagemaker_endpoint.stock_prediction_endpoint.name
-}
-
-output "rds_cluster_endpoint" {
-  description = "RDS cluster endpoint"
-  value       = aws_rds_cluster.stock_analytics_aurora.endpoint
-  sensitive   = true
-}
-
-output "redis_endpoint" {
-  description = "Redis cluster endpoint"
-  value       = aws_elasticache_replication_group.stock_analytics_redis.primary_endpoint_address
-  sensitive   = true
+  tags = merge(
+    {
+      Name          = "daily-cost-report"
+      CostOptimized = "true"
+    },
+    var.additional_tags
+  )
 }
