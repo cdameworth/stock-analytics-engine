@@ -131,3 +131,24 @@ variable "cost_alert_email" {
   sensitive   = true
 }
 
+variable "enable_nat_gateway" {
+  description = "Create NAT Gateway for private subnet internet egress"
+  type        = bool
+  default     = true
+}
+
+# Public subnet for NAT (1 AZ is enough)
+resource "aws_subnet" "public_subnet_1" {
+  count                   = var.enable_nat_gateway ? 1 : 0
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.10.0/24"
+  availability_zone       = data.aws_availability_zones.available.names[0]
+  map_public_ip_on_launch = true
+
+  tags = merge(
+    {
+      Name = "public-subnet-1"
+    },
+    var.additional_tags
+  )
+}

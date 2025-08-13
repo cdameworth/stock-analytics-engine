@@ -8,7 +8,7 @@ import boto3
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
-import numpy as np
+#import numpy as np
 import os
 
 # Configure logging

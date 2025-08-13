@@ -554,12 +554,19 @@ resource "aws_lambda_function" "stock_data_ingestion" {
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
+  layers = [
+    "arn:aws:lambda:us-east-1:791060928878:layer:valkey-redis-py311:1"
+  ]
+
   environment {
     variables = {
       ALPHA_VANTAGE_API_KEY            = var.alpha_vantage_api_key
       S3_BUCKET                        = aws_s3_bucket.stock_data_lake.bucket
       DYNAMODB_TABLE                   = aws_dynamodb_table.stock_recommendations.name
-      REDIS_ENDPOINT                   = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
+      VALKEY_ENDPOINT                  = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
+      ML_INFERENCE_FUNCTION_NAME       = aws_lambda_function.ml_model_inference_lowcost.function_name
+      # MAX_SYMBOLS_PER_RUN              = "5"
+      # PER_CALL_TIMEOUT                 = "8"
     }
   }
 
@@ -591,8 +598,9 @@ resource "aws_lambda_function" "stock_recommendations_api" {
 
   environment {
     variables = {
-      DYNAMODB_TABLE = aws_dynamodb_table.stock_recommendations.name
-      REDIS_ENDPOINT = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
+      DYNAMODB_TABLE  = aws_dynamodb_table.stock_recommendations.name
+      VALKEY_ENDPOINT = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
+      REDIS_ENDPOINT  = aws_elasticache_replication_group.stock_analytics_valkey_lowcost.primary_endpoint_address
     }
   }
 
@@ -603,6 +611,113 @@ resource "aws_lambda_function" "stock_recommendations_api" {
     },
     var.additional_tags
   )
+}
+
+# Internet Gateway
+resource "aws_internet_gateway" "igw" {
+  count  = var.enable_nat_gateway ? 1 : 0
+  vpc_id = aws_vpc.main.id
+
+  tags = merge(
+    {
+      Name = "stock-analytics-igw"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_subnet" "public_nat_subnet" {
+  count                   = var.enable_nat_gateway ? 1 : 0
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.3.0/24"
+  availability_zone       = data.aws_availability_zones.available.names[0]
+  map_public_ip_on_launch = true
+  tags = merge({ Name = "public-nat-subnet" }, var.additional_tags)
+}
+
+# Elastic IP for NAT
+resource "aws_eip" "nat" {
+  count  = var.enable_nat_gateway ? 1 : 0
+  domain = "vpc"
+
+  tags = merge(
+    {
+      Name = "stock-analytics-nat-eip"
+    },
+    var.additional_tags
+  )
+}
+
+# NAT Gateway
+resource "aws_nat_gateway" "nat_gw" {
+  count         = var.enable_nat_gateway ? 1 : 0
+  allocation_id = aws_eip.nat[0].id
+  subnet_id     = aws_subnet.public_nat_subnet[0].id
+
+  tags = merge(
+    {
+      Name = "stock-analytics-nat-gw"
+    },
+    var.additional_tags
+  )
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# Public route table (route to IGW)
+resource "aws_route_table" "public_rt" {
+  count  = var.enable_nat_gateway ? 1 : 0
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw[0].id
+  }
+
+  tags = merge(
+    {
+      Name = "public-rt"
+    },
+    var.additional_tags
+  )
+}
+
+# Associate public subnet
+resource "aws_route_table_association" "public_assoc_1" {
+  count          = var.enable_nat_gateway ? 1 : 0
+  subnet_id      = aws_subnet.public_nat_subnet[0].id
+  route_table_id = aws_route_table.public_rt[0].id
+}
+
+# Private route table (default route via NAT)
+resource "aws_route_table" "private_rt" {
+  count  = var.enable_nat_gateway ? 1 : 0
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat_gw[0].id
+  }
+
+  tags = merge(
+    {
+      Name = "private-rt"
+    },
+    var.additional_tags
+  )
+}
+
+# Associate existing private subnets to private RT
+resource "aws_route_table_association" "private_assoc_1" {
+  count          = var.enable_nat_gateway ? 1 : 0
+  subnet_id      = aws_subnet.private_subnet_1.id
+  route_table_id = aws_route_table.private_rt[0].id
+}
+
+resource "aws_route_table_association" "private_assoc_2" {
+  count          = var.enable_nat_gateway ? 1 : 0
+  subnet_id      = aws_subnet.private_subnet_2.id
+  route_table_id = aws_route_table.private_rt[0].id
 }
 
 # Add Lambda permissions for DynamoDB and SageMaker
@@ -641,6 +756,29 @@ resource "aws_iam_role_policy" "lambda_sagemaker_dynamodb" {
           "lambda:InvokeFunction"
         ]
         Resource = "arn:aws:lambda:*:*:function:ml-model-inference*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_s3_access" {
+  name = "lambda-s3-ingestion-access"
+  role = aws_iam_role.lambda_execution_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "AllowPutGetListDataLake"
+        Effect   = "Allow"
+        Action   = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.stock_data_lake.arn,
+          "${aws_s3_bucket.stock_data_lake.arn}/*"
+        ]
       }
     ]
   })

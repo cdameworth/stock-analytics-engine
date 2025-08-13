@@ -18,41 +18,93 @@ logger.setLevel(logging.INFO)
 dynamodb = boto3.resource('dynamodb')
 redis_client = None
 
+VALKEY_ENDPOINT = os.environ.get('VALKEY_ENDPOINT') or os.environ.get('REDIS_ENDPOINT')
+cache_client = None
+cache_available = False
+cache_init_attempted = False
+
 # Configuration
 DYNAMODB_TABLE = os.environ['DYNAMODB_TABLE']
 REDIS_ENDPOINT = os.environ.get('REDIS_ENDPOINT')
 
+def _init_cache():
+    global cache_client, cache_available, cache_init_attempted
+    if cache_init_attempted or not VALKEY_ENDPOINT:
+        return
+    cache_init_attempted = True
+    try:
+        import redis  # redis-py works with Valkey
+        cache_client = redis.Redis(
+            host=VALKEY_ENDPOINT,
+            port=6379,
+            decode_responses=True,
+            socket_timeout=1
+        )
+        cache_client.ping()
+        cache_available = True
+        logger.info("Valkey cache initialized")
+    except ImportError:
+        logger.info("redis/valkey client library not packaged; cache disabled")
+    except Exception as e:
+        logger.warning(f"Valkey cache init failed ({e}); disabled")
+
+
 def lambda_handler(event, context):
     """
-    Main Lambda handler function for API Gateway
+    Main Lambda handler function for API Gateway (REST / HTTP API) or test invoke.
     """
     try:
-        # Initialize Redis connection if available
-        if REDIS_ENDPOINT:
-            import redis
-            global redis_client
-            redis_client = redis.Redis(host=REDIS_ENDPOINT, port=6379, decode_responses=True)
-        
-        # Parse request
-        http_method = event['httpMethod']
-        path = event['path']
+        _init_cache()
+
+        # Support test invokes with none/empty event
+        if event is None:
+            event = {}
+
+        # Derive HTTP method & path robustly
+        http_method = (
+            event.get('httpMethod') or
+            event.get('requestContext', {}).get('http', {}).get('method') or
+            'GET'
+        )
+        path = (
+            event.get('path') or
+            event.get('rawPath') or
+            '/'
+        )
         query_params = event.get('queryStringParameters') or {}
-        
-        logger.info(f"Processing {http_method} request to {path}")
-        
-        # Route request
-        if http_method == 'GET' and path == '/recommendations':
-            return get_recommendations(query_params)
-        elif http_method == 'GET' and path.startswith('/recommendations/'):
-            symbol = path.split('/')[-1].upper()
-            return get_recommendation_by_symbol(symbol, query_params)
-        else:
+
+        # CORS preflight
+        if http_method == 'OPTIONS':
             return {
-                'statusCode': 404,
+                'statusCode': 204,
                 'headers': get_cors_headers(),
-                'body': json.dumps({'error': 'Endpoint not found'})
+                'body': ''
             }
-        
+
+        # Simple health endpoint
+        if path in ['/', '/health']:
+            return {
+                'statusCode': 200,
+                'headers': get_cors_headers(),
+                'body': json.dumps({
+                    'status': 'ok',
+                    'cache': 'ready' if cache_available else 'disabled',
+                    'timestamp': datetime.utcnow().isoformat()
+                })
+            }
+        if path.startswith('/recommendations/') and len(path.split('/')) == 3:
+            symbol = path.split('/')[2].upper()
+            return get_recommendation_by_symbol(symbol, query_params)
+
+        if path == '/recommendations':
+            return get_recommendations(query_params)
+
+        return {
+            'statusCode': 404,
+            'headers': get_cors_headers(),
+            'body': json.dumps({'error': 'Not found', 'path': path})
+        }
+
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")
         return {
@@ -63,6 +115,29 @@ def lambda_handler(event, context):
                 'timestamp': datetime.utcnow().isoformat()
             })
         }
+
+def get_from_cache(key):
+    """
+    Get data from Valkey/Redis cache
+    """
+    try:
+        if cache_available and cache_client:
+            return cache_client.get(key)
+        return None
+    except Exception as e:
+        logger.error(f"Error getting from cache: {str(e)}")
+        return None
+
+def cache_result(key, data, ttl=300):
+    """
+    Store data in Valkey/Redis cache
+    """
+    try:
+        if cache_available and cache_client:
+            cache_client.setex(key, ttl, data)
+            logger.debug(f"Cached result {key}")
+    except Exception as e:
+        logger.error(f"Error caching result: {str(e)}")
 
 def get_recommendations(query_params):
     """
