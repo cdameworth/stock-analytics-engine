@@ -147,6 +147,45 @@ x-api-key: lp1ISnIC60ambkegNj3yn1SHaX8EVuQ41pECFNfq
 - **Cost Monitoring**: Alerts when monthly costs exceed $300
 - **Performance Tracking**: Hit rate trends, confidence calibration, symbol-level performance
 
+## Git Workflow Requirements
+
+**CRITICAL**: Claude Code must follow these git workflow patterns for proper ops health:
+
+### Commit Integration Pattern
+- **After completing any task/todo**: Check for changes → Validate → Commit → Push
+- **After successful tests/validation**: Always commit with test results
+- **Before risky operations**: Create restore point commits  
+- **Every 30-45 minutes**: Commit incremental progress during active development
+- **Before switching contexts**: Commit current state
+
+### Validation Sequence (Required Before Each Commit)
+```bash
+git status              # Review pending changes
+python3 run_tests.py   # Run tests (if available)  
+git diff               # Review actual changes
+git add -A             # Stage all changes
+git commit -m "..."    # Commit with standard message format
+git push origin main   # Push to remote
+```
+
+### Commit Message Format (Required)
+```
+<type>(<scope>): <description>
+
+[optional body with bullet points]
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Types**: feat, fix, refactor, test, docs, config, deploy
+**Scopes**: lambda, infrastructure, api, ml, tests, docs
+
+### Git Triggers (When to Commit)
+- 🔴 **Always**: After tests pass, before risky ops, after validation gates
+- 🟡 **Usually**: After task completion, bug fixes, feature additions  
+- 🟢 **Often**: After cleanup, documentation updates, logical breakpoints
+
 ## Important Development Notes
 
 ### AWS Profile Requirement
