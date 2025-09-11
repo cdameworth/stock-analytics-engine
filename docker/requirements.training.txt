@@ -1,0 +1,24 @@
+# Training container requirements
+# Optimized for ECS Fargate model training
+
+# Core ML libraries
+scikit-learn==1.3.2
+numpy==1.24.3
+pandas==2.0.3
+joblib==1.3.2
+
+# AWS libraries
+boto3>=1.35.0
+botocore>=1.35.0
+
+# Additional ML libraries for training
+scipy==1.11.4
+matplotlib==3.7.2
+seaborn==0.12.2
+
+# Data processing
+pytz==2023.3
+python-dateutil==2.8.2
+
+# Performance monitoring
+psutil==5.9.6

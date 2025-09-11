@@ -1,225 +1,234 @@
-# Stock Analytics Engine - Overwatch Demo Application
+# Stock Analytics Engine
 
-A comprehensive AWS-based stock analysis and ML recommendation engine that provides real-time market intelligence through a fully observable infrastructure.
+AWS serverless stock analysis platform with advanced ML model tuning designed for market-beating performance.
 
 ## 🏗️ Architecture Overview
 
-This application demonstrates a production-ready microservices architecture for AI-powered stock analysis using AWS services with comprehensive observability for the Overwatch infrastructure monitoring platform.
+### Core Infrastructure
+- **Lambda Functions**: Data ingestion, ML inference, and recommendations API
+- **API Gateway**: Secured RESTful endpoints with API key authentication
+- **DynamoDB**: Stock recommendations and AI performance analytics storage
+- **S3**: Data lake and ML model artifacts
+- **EventBridge**: Automated scheduling for data collection and model optimization
+- **CloudWatch**: Monitoring with custom performance dashboards
+- **Secrets Manager**: Secure API key management
 
-### Core Components
+### Advanced Model Tuning System
+5-component Lambda architecture targeting **65% hit rate** and **3% market outperformance**:
 
-- **Lambda Functions**: Serverless data processing and ML inference
-- **SageMaker**: ML model hosting and inference endpoints
-- **API Gateway**: RESTful API for stock recommendations
-- **RDS Aurora**: PostgreSQL cluster for structured data
-- **DynamoDB**: NoSQL storage for recommendations and caching  
-- **ElastiCache Redis**: High-performance caching layer
-- **S3**: Data lake for raw stock data and ML models
-- **EventBridge**: Scheduled data ingestion (every 15 minutes)
-- **CloudWatch**: Comprehensive logging and monitoring
-- **X-Ray**: Distributed tracing
-- **SNS/SQS**: Asynchronous messaging and dead letter queues
+- **Advanced Tuning Orchestrator**: Master coordinator for comprehensive model optimization
+- **Backtesting Engine**: Walk-forward validation with S&P 500 benchmark comparison
+- **Fundamental Data Enrichment**: P/E ratios, earnings growth, and sector rotation analysis
+- **Ensemble Model Engine**: XGBoost, LightGBM, and Neural Network combination
+- **Market Validation Engine**: Real-time benchmark compliance and competitive scoring
 
-## 📊 Data Flow
+## 📊 Advanced Tuning Workflow
 
-1. **Data Ingestion**: EventBridge triggers Lambda function every 15 minutes
-2. **Alpha Vantage API**: Fetches real-time stock data for major indexes and popular stocks
-3. **Data Processing**: Lambda processes and stores data in S3 data lake
-4. **ML Inference**: SageMaker endpoint analyzes market conditions and generates predictions
-5. **Recommendations**: Results stored in DynamoDB with Redis caching
-6. **API Serving**: API Gateway provides REST endpoints for consuming applications
+### Automated Optimization Schedule
+- **Daily Assessment**: 8 AM EventBridge trigger for performance monitoring
+- **Weekly Comprehensive Tuning**: Sunday 2 AM full optimization cycle
+- **Manual Triggers**: On-demand optimization via Lambda invoke
 
-## 🔧 Configuration
+### End-to-End Process
+1. **Historical Validation**: Backtesting engine validates model performance using walk-forward analysis
+2. **Feature Enhancement**: Fundamental data enrichment adds P/E ratios, earnings trends, sector rotation
+3. **Ensemble Training**: Multi-algorithm training with XGBoost, LightGBM, and Neural Networks
+4. **Market Benchmarking**: Validation against S&P 500, QQQ, and IWM performance
+5. **Deployment Gate**: Only deploy models achieving 65% hit rate and 3% market outperformance
 
-### Environment Variables
+## 🔐 Security & Authentication
 
+### API Key Authentication
+- **Protected Endpoints**: All API endpoints require valid API key in `x-api-key` header
+- **Usage Plans**: Rate limiting (100 req/sec, 200 burst, 10K/month quota)
+- **API Key**: `lp1ISnIC60ambkegNj3yn1SHaX8EVuQ41pECFNfq`
+
+### Example Authenticated Request
 ```bash
-# Alpha Vantage API
-ALPHA_VANTAGE_API_KEY=YFT4NTLIWG9Z05LA
-
-# AWS Configuration
-AWS_REGION=us-east-1
-
-# Lambda Environment Variables
-S3_BUCKET=stock-analytics-data-lake-${random_suffix}
-REDIS_ENDPOINT=${redis_cluster_address}
-DYNAMODB_TABLE=stock-recommendations
-SAGEMAKER_ENDPOINT=stock-prediction-endpoint
-RDS_ENDPOINT=${aurora_cluster_endpoint}
-```
-
-### Terraform Deployment
-
-```bash
-# Initialize Terraform
-terraform init
-
-# Plan deployment
-terraform plan -var="aws_region=us-east-1" -var="environment=production"
-
-# Deploy infrastructure
-terraform apply -auto-approve
-
-# Get API Gateway URL
-terraform output api_gateway_url
+curl -H "x-api-key: lp1ISnIC60ambkegNj3yn1SHaX8EVuQ41pECFNfq" \
+     "https://2cqomr4nb2.execute-api.us-east-1.amazonaws.com/prod/recommendations"
 ```
 
 ## 📈 API Endpoints
 
-### Get Stock Recommendations
+### Stock Recommendations
 ```http
-GET /recommendations?type=BUY&risk=LOW&limit=10&min_confidence=0.7
+GET /recommendations
+GET /recommendations/{symbol}
+Headers: x-api-key: lp1ISnIC60ambkegNj3yn1SHaX8EVuQ41pECFNfq
 ```
 
-### Get Recommendation by Symbol
+### AI Performance Analytics
 ```http
-GET /recommendations/AAPL?include_history=true
+GET /analytics/dashboard       # Overall performance metrics
+GET /analytics/detailed        # Detailed analytics with trends  
+GET /analytics/history         # Historical performance data
+Headers: x-api-key: lp1ISnIC60ambkegNj3yn1SHaX8EVuQ41pECFNfq
 ```
 
-### Health Check
-```http
-GET /health
+## 🚀 Deployment Configurations
+
+### Tier 1: Production Stability (~$245/month)
+- **Database**: db.r5.large with 7-day backup retention
+- **Cache**: 3x cache.r6g.large Valkey clusters
+- **Lambda**: 2048MB memory, 300s timeout
+- **API**: Premium Alpha Vantage key (75 calls/min)
+- **Features**: AI Analytics, automated model tuning, enhanced monitoring
+
+```bash
+terraform apply -var-file="terraform-tier1.tfvars" -auto-approve
 ```
 
-## 🎯 Key Features
+### Key Tier 1 Features
+- **Production Stability**: Disabled spot instances, enhanced monitoring
+- **High Availability**: Multi-AZ deployment with 3 cache clusters
+- **AI Analytics**: Full performance monitoring and model optimization
+- **Enhanced Data Ingestion**: Every 2 hours during market + end-of-day
+- **Premium API Access**: 150+ stocks across all major sectors
 
-### Stock Data Processing
-- **Real-time Data**: Fetches data from Alpha Vantage API every 15 minutes
-- **Market Coverage**: Major indexes (SPY, QQQ, IWM, DIA, VTI) and popular stocks
-- **Technical Analysis**: Moving averages, volatility calculations, volume analysis
-- **Data Lake**: All raw data stored in S3 for historical analysis
+## 🧠 AI Performance Analytics Features
 
-### ML-Powered Recommendations
-- **SageMaker Integration**: Production ML model hosted on managed endpoints  
-- **Feature Engineering**: Technical indicators, market sentiment, correlation analysis
-- **Prediction Confidence**: Each recommendation includes confidence scoring
-- **Fallback Logic**: Rule-based recommendations when ML service is unavailable
+### Real-time Performance Monitoring
+- **Hit Rate Analysis**: Tracks prediction accuracy against actual market movements
+- **Time-to-Hit Calculations**: Measures how quickly predictions reach target prices
+- **Confidence Calibration**: Analyzes correlation between prediction confidence and accuracy
+- **Symbol Performance**: Per-stock performance tracking and optimization
 
-### High Availability & Performance
-- **Multi-AZ Deployment**: Aurora and ElastiCache deployed across availability zones
-- **Auto Scaling**: Lambda functions scale automatically with demand
-- **Caching Strategy**: Redis for API responses, DynamoDB for structured data
-- **Circuit Breakers**: Graceful degradation when external services fail
+### Automated Model Improvement
+- **Hyperparameter Tuning**: GridSearchCV optimization using scikit-learn
+- **A/B Testing**: Compare different model configurations
+- **Performance Trending**: Track model improvement over time
+- **Automated Retraining**: Triggered based on performance thresholds
 
-### Comprehensive Observability
-- **CloudWatch Dashboards**: Real-time metrics for all services
-- **Custom Metrics**: Business metrics (recommendation count, accuracy, API latency)
-- **Distributed Tracing**: X-Ray integration across all Lambda functions
-- **Alerting**: SNS notifications for critical issues and performance degradation
-- **Log Aggregation**: Centralized logging with structured JSON format
+### Analytics Infrastructure
+- **DynamoDB Analytics Table**: Scalable storage with GSI for symbol-based queries
+- **CloudWatch Integration**: Custom metrics and automated dashboards
+- **Scheduled Automation**: Daily validation (6 AM UTC), weekly tuning (Sundays 2 AM UTC)
+- **Frontend API**: Dedicated endpoints for dashboard integration
 
 ## 📊 Monitoring & Observability
 
-### CloudWatch Metrics
-- Lambda duration, errors, and invocations
-- API Gateway request count, latency, and error rates  
-- DynamoDB consumed capacity and throttling
-- SageMaker endpoint invocations and model latency
-- Custom business metrics (recommendations generated, ML accuracy)
+### CloudWatch Dashboards
+- **Stock Analytics AI Performance**: Comprehensive AI metrics dashboard
+- **Hit Rate Trends**: Real-time accuracy monitoring
+- **Model Performance**: Confidence vs accuracy analysis
+- **API Usage**: Rate limiting and authentication metrics
 
-### Alarms & Notifications
-- Lambda error rate > 5% triggers SNS alert
-- API Gateway 4XX errors > 10/5min triggers investigation
-- SageMaker endpoint failures trigger fallback mode
-- RDS performance insights for database optimization
+### Key Metrics Tracked
+- **ML Model Performance**: Hit rates, time-to-prediction, confidence accuracy
+- **API Performance**: Request latency, authentication success rates
+- **Infrastructure Health**: Lambda duration, DynamoDB performance, cache hit rates
+- **Business Metrics**: Recommendations generated, symbol coverage, prediction accuracy
 
-### Performance Optimization
-- Lambda memory and timeout tuning based on CloudWatch insights
-- DynamoDB performance indexes for efficient queries
-- S3 lifecycle policies for cost optimization
-- Redis cluster monitoring for cache hit rates
+### Automated Alerting
+- **Cost Management**: Alerts when monthly costs exceed $300
+- **Performance Degradation**: ML model accuracy dropping below thresholds  
+- **API Issues**: Authentication failures, rate limit violations
+- **Infrastructure Problems**: Lambda errors, database connection issues
 
-## 🚀 Deployment Guide
+## 🔧 Infrastructure Management
+
+### Terraform Configuration
+- **main.tf**: Core AWS services and networking
+- **deploy_advanced_tuning.tf**: Advanced model tuning Lambda system
+- **api_key_auth.tf**: API authentication and usage plans  
+- **outputs.tf**: API endpoints and configuration details
+
+### Environment Configuration
+- **terraform-tier1.tfvars**: Production configuration with AI analytics
+- **variables.tf**: Configurable parameters and defaults
+- **API Key Management**: Secure key rotation and access control
+
+### Lambda Functions
+- **stock_data_ingestion.py**: Market data collection and processing
+- **stock_recommendations_api.py**: Main API request handling
+- **lambda_functions/advanced_model_tuning_service.py**: Master orchestrator for market-beating optimization
+- **lambda_functions/backtesting_engine.py**: Walk-forward validation with market benchmarks
+- **lambda_functions/fundamental_data_enrichment.py**: P/E ratios and earnings analysis
+- **lambda_functions/ensemble_model_engine.py**: Multi-algorithm ML training
+- **lambda_functions/market_validation_engine.py**: S&P 500 compliance validation
+- **lambda_functions/ai_performance_reporter.py**: Performance analytics and reporting
+
+## 💰 Cost Optimization & Tiers
+
+### Current Deployment: Tier 1 Production
+- **Estimated Cost**: $245/month
+- **Key Benefits**: Production stability, AI analytics, premium API access
+- **Scalability**: Handles 150+ stocks with enhanced monitoring
+
+### Cost Breakdown
+- **Database**: db.r5.large cluster (~$140/month)
+- **Cache**: 3x cache.r6g.large nodes (~$65/month) 
+- **Lambda**: Enhanced memory allocation (~$25/month)
+- **API Gateway + CloudWatch**: (~$15/month)
+
+### Optimization Strategies
+- **Lambda-Only ML**: Serverless ensemble models for cost efficiency (no SageMaker)
+- **Evidence-Based Validation**: Walk-forward backtesting prevents unrealistic expectations
+- **Market Benchmarking**: S&P 500 compliance ensures competitive performance
+- **Automated Scheduling**: EventBridge reduces manual intervention costs
+
+## 🔧 Development & Deployment
 
 ### Prerequisites
-- AWS CLI configured with appropriate permissions
+- AWS CLI configured with `stock-analytics-admin` profile
 - Terraform >= 1.0
-- Alpha Vantage API key
+- Alpha Vantage Premium API key
 
-### Infrastructure Deployment
+### Quick Deployment
 ```bash
-# Clone repository
-git clone <repository-url>
+# Deploy core infrastructure
+terraform apply -var-file="terraform-current.tfvars" -auto-approve
+
+# Deploy advanced tuning system
+terraform apply -target="module.deploy_advanced_tuning" -auto-approve
+
+# Get API endpoints and key
+terraform output api_endpoints
+terraform output api_key_value
+```
+
+### Testing the System
+```bash
+# Test main recommendations API
+curl -H "x-api-key: lp1ISnIC60ambkegNj3yn1SHaX8EVuQ41pECFNfq" \
+     "https://2cqomr4nb2.execute-api.us-east-1.amazonaws.com/prod/recommendations"
+
+# Trigger advanced model tuning
+aws lambda invoke --function-name advanced-model-tuning-service \
+  --payload '{"action":"comprehensive_tuning","lookback_days":90}' \
+  --profile stock-analytics-admin response.json
+
+# Monitor tuning progress
+aws logs tail /aws/lambda/advanced-model-tuning-service --follow --profile stock-analytics-admin
+```
+
+## 📈 Performance Features
+
+### Market-Beating Design
+- **Evidence-Based Validation**: Walk-forward backtesting with real market data
+- **Fundamental Analysis**: P/E ratios, earnings growth, sector rotation signals  
+- **Ensemble ML**: XGBoost, LightGBM, and Neural Network combination
+- **Benchmark Compliance**: S&P 500 outperformance validation
+
+### Operational Excellence
+- **Automated Optimization**: EventBridge-scheduled weekly tuning cycles
+- **Risk Management**: Sharpe ratio >1.0, max drawdown <15% requirements
+- **Performance Gates**: 65% hit rate threshold before deployment
+- **Real-time Monitoring**: CloudWatch dashboards with custom metrics
+
+## 🚀 Getting Started
+
+```bash
+# Clone and deploy
+git clone <repository>
 cd stock-analytics-engine
-
-# Set variables
-export TF_VAR_alpha_vantage_api_key="YFT4NTLIWG9Z05LA"
-export TF_VAR_aws_region="us-east-1"
-export TF_VAR_environment="production"
-
-# Deploy infrastructure
 terraform init
-terraform apply
+terraform apply -var-file="terraform-current.tfvars"
 
-# Package and deploy Lambda functions
-zip -r stock_data_ingestion.zip lambda_functions/stock_data_ingestion.py
-zip -r ml_model_inference.zip lambda_functions/ml_model_inference.py
-zip -r stock_recommendations_api.zip lambda_functions/stock_recommendations_api.py
-
-# Update Lambda function code
-aws lambda update-function-code --function-name stock-data-ingestion --zip-file fileb://stock_data_ingestion.zip
-aws lambda update-function-code --function-name ml-model-inference --zip-file fileb://ml_model_inference.zip
-aws lambda update-function-code --function-name stock-recommendations-api --zip-file fileb://stock_recommendations_api.zip
+# Test the system
+aws lambda invoke --function-name advanced-model-tuning-service \
+  --payload '{"action":"comprehensive_tuning"}' response.json
 ```
 
-### Testing
-```bash
-# Test API endpoint
-curl "$(terraform output -raw api_gateway_url)/recommendations?limit=5"
-
-# Test specific stock
-curl "$(terraform output -raw api_gateway_url)/recommendations/AAPL"
-
-# Monitor logs
-aws logs tail /aws/lambda/stock-data-ingestion --follow
-```
-
-## 🔍 Troubleshooting
-
-### Common Issues
-1. **API Rate Limits**: Alpha Vantage free tier has 5 calls/minute limit
-2. **Lambda Timeouts**: Increase timeout for ML inference function if needed
-3. **SageMaker Cold Start**: First model invocation may take longer
-4. **Redis Connection**: Ensure Lambda functions are in correct VPC subnets
-
-### Debug Commands
-```bash
-# Check Lambda function logs
-aws logs describe-log-groups --log-group-name-prefix /aws/lambda/
-
-# Monitor DynamoDB metrics
-aws cloudwatch get-metric-statistics --namespace AWS/DynamoDB --metric-name ConsumedReadCapacityUnits
-
-# Test SageMaker endpoint
-aws sagemaker-runtime invoke-endpoint --endpoint-name stock-prediction-endpoint --body '{"instances":[[0.95,1.02,0.03,0.8,0.7,0.02,0.6]]}' output.json
-```
-
-## 📋 Cost Optimization
-
-### Estimated Monthly Costs (Production)
-- **Lambda**: ~$50 (15-minute intervals, 2880 invocations/month)
-- **SageMaker**: ~$150 (ml.m5.large endpoint)
-- **RDS Aurora**: ~$200 (2x db.r6g.large instances)
-- **ElastiCache**: ~$180 (2x cache.r7g.large nodes)
-- **API Gateway**: ~$10 (100K requests/month)
-- **S3 + DynamoDB**: ~$20
-- **Total**: ~$610/month
-
-### Cost Optimization Strategies
-- Use SageMaker Serverless Inference for lower traffic
-- Implement DynamoDB on-demand billing
-- Use Lambda Provisioned Concurrency only if needed
-- Archive old S3 data to cheaper storage classes
-
-## 🎯 Integration with Overwatch
-
-This application serves as a comprehensive example for the Overwatch infrastructure monitoring platform, demonstrating:
-
-- **Multi-service Architecture**: Complex AWS service interactions
-- **Real-time Telemetry**: CloudWatch custom metrics and logs
-- **Performance Monitoring**: Application and infrastructure metrics
-- **Dependency Mapping**: Service-to-service communication patterns
-- **Alert Management**: SNS integration for operational notifications
-- **Cost Tracking**: Resource usage and optimization opportunities
-
-The Stock Analytics Engine provides realistic ADM (Application Dependency Mapping) and telemetry data for testing Overwatch's visualization and monitoring capabilities across a production-grade microservices architecture.
+This platform implements advanced ML model tuning designed to achieve consistent market-beating performance through evidence-based validation and systematic optimization.

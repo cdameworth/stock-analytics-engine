@@ -1,0 +1,34 @@
+# Dockerfile for ECS Fargate Model Training
+# Optimized for cost and performance
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies (minimal for cost optimization)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    libc6-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Install Python dependencies
+COPY requirements.training.txt .
+RUN pip install --no-cache-dir -r requirements.training.txt
+
+# Copy training scripts
+COPY training/ ./training/
+COPY docker/utils/ ./utils/
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV AWS_DEFAULT_REGION=us-east-1
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash trainer
+USER trainer
+
+# Default command
+CMD ["python", "training/train_model.py"]

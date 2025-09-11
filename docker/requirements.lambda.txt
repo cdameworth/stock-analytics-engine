@@ -1,0 +1,14 @@
+# Lambda ML inference requirements
+# Optimized for container-based Lambda deployment
+
+# Core ML libraries  
+scikit-learn==1.3.2
+numpy==1.24.3
+joblib==1.3.2
+
+# AWS libraries (pre-installed in Lambda but good to be explicit)
+boto3>=1.29.0
+botocore>=1.32.0
+
+# Minimal additional dependencies
+python-dateutil>=2.8.2

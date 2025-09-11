@@ -12,5 +12,138 @@
 # .terraform.lock.hcl files
 .terraform.lock.hcl
 
+# Terraform plan files
+*.tfplan
+*.tfplan.*
+
 # Crash log files
 crash.log
+
+# Lambda deployment packages
+*.zip
+
+# Test files and responses
+*test*.json
+*response*.json
+*result*.json
+api_*.json
+e2e_*.json
+ml_*.json
+capacity_*.json
+comprehensive_*.json
+enhanced_*.json
+expanded_*.json
+extreme_*.json
+final_*.json
+improved_*.json
+manual_*.json
+normal_*.json
+output.json
+ingestion_*.json
+analytics_*.json
+
+# Backup files
+*.old
+*.backup
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python cache and dependencies
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Lambda function dependencies (keep only our custom Python files)
+lambda_functions/boto3/
+lambda_functions/boto3-*/
+lambda_functions/botocore/
+lambda_functions/botocore-*/
+lambda_functions/certifi/
+lambda_functions/certifi-*/
+lambda_functions/charset_normalizer/
+lambda_functions/charset_normalizer-*/
+lambda_functions/idna/
+lambda_functions/idna-*/
+lambda_functions/jmespath/
+lambda_functions/jmespath-*/
+lambda_functions/requests/
+lambda_functions/requests-*/
+lambda_functions/s3transfer/
+lambda_functions/s3transfer-*/
+lambda_functions/urllib3/
+lambda_functions/urllib3-*/
+lambda_functions/six.py
+lambda_functions/six-*/
+lambda_functions/python_dateutil-*/
+lambda_functions/dateutil/
+lambda_functions/typing_extensions.py
+lambda_functions/typing_extensions-*/
+lambda_functions/yfinance/
+lambda_functions/yfinance-*/
+lambda_functions/numpy/
+lambda_functions/numpy-*/
+lambda_functions/pandas/
+lambda_functions/pandas-*/
+lambda_functions/scipy/
+lambda_functions/scipy-*/
+lambda_functions/sklearn/
+lambda_functions/scikit_learn-*/
+lambda_functions/joblib/
+lambda_functions/joblib-*/
+lambda_functions/threadpoolctl.py
+lambda_functions/threadpoolctl-*/
+lambda_functions/pytz/
+lambda_functions/pytz-*/
+lambda_functions/tzdata/
+lambda_functions/tzdata-*/
+lambda_functions/beautifulsoup4-*/
+lambda_functions/bs4/
+lambda_functions/soupsieve/
+lambda_functions/soupsieve-*/
+lambda_functions/websockets/
+lambda_functions/websockets-*/
+lambda_functions/curl_cffi/
+lambda_functions/curl_cffi-*/
+lambda_functions/cffi/
+lambda_functions/cffi-*/
+lambda_functions/_cffi_backend.*
+lambda_functions/pycparser/
+lambda_functions/pycparser-*/
+lambda_functions/multitasking/
+lambda_functions/multitasking-*/
+lambda_functions/frozendict/
+lambda_functions/frozendict-*/
+lambda_functions/peewee.py
+lambda_functions/peewee-*/
+lambda_functions/playhouse/
+lambda_functions/pwiz.py
+lambda_functions/platformdirs/
+lambda_functions/platformdirs-*/
+lambda_functions/protobuf-*/
+lambda_functions/google/
+lambda_functions/bin/
+
+# MacOS
+.DS_Store
+
+# CloudWatch dashboard exports
+cloudwatch-dashboard.json
+
+# Temporary model files
+model/improved_model_artifacts/
+model/*.tar.gz
+!model/code.tar.gz
+
+# Serena files
+*.serena
+
