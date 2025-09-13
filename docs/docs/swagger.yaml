@@ -1,0 +1,647 @@
+openapi: 3.0.3
+info:
+  title: Stock Analytics Engine API
+  description: |
+    A serverless AWS platform for stock analysis with advanced ML model tuning, designed to achieve market-beating performance through systematic optimization and evidence-based validation.
+
+    ## Authentication
+    All API endpoints require the `x-api-key` header for authentication.
+
+    ## Rate Limits
+    - 100 requests per second
+    - 200 burst limit
+    - 10,000 requests per month
+
+    ## Performance Targets
+    - **Hit Rate**: 65% accuracy threshold for deployment
+    - **Market Outperformance**: 3% above S&P 500 benchmark
+    - **Risk Management**: Sharpe ratio >1.0, max drawdown <15%
+  version: "1.0.0"
+  contact:
+    name: Stock Analytics Engine
+  license:
+    name: Private
+
+servers:
+  - url: https://2cqomr4nb2.execute-api.us-east-1.amazonaws.com/prod
+    description: Production API Gateway
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /recommendations:
+    get:
+      tags:
+        - Stock Recommendations
+      summary: Get all stock recommendations
+      description: Retrieve all current stock recommendations with ML-generated predictions and confidence scores
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of recommendations to return
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: page
+          in: query
+          description: Page number for pagination (0-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Successful response with stock recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StockRecommendation'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+              examples:
+                successful_response:
+                  summary: Example recommendations response
+                  value:
+                    recommendations:
+                      - recommendation_id: "AAPL_20250913_143022"
+                        symbol: "AAPL"
+                        prediction: "BUY"
+                        confidence: 0.87
+                        target_price: 185.50
+                        current_price: 175.23
+                        upside_potential: 0.0586
+                        timestamp: "2025-09-13T14:30:22Z"
+                        model_version: "v2.1"
+                        features_used: 42
+                        risk_score: 0.23
+                        ttl: 1726246222
+                    meta:
+                      total_count: 147
+                      page: 0
+                      limit: 50
+                      has_next: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /recommendations/{symbol}:
+    get:
+      tags:
+        - Stock Recommendations
+      summary: Get recommendation for specific stock symbol
+      description: Retrieve the latest recommendation for a specific stock symbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Stock symbol (e.g., AAPL, GOOGL, MSFT)
+          schema:
+            type: string
+            pattern: '^[A-Z]{1,5}$'
+          examples:
+            apple:
+              summary: Apple Inc.
+              value: AAPL
+            google:
+              summary: Alphabet Inc.
+              value: GOOGL
+            microsoft:
+              summary: Microsoft Corporation
+              value: MSFT
+      responses:
+        '200':
+          description: Successful response with stock recommendation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockRecommendation'
+              examples:
+                apple_recommendation:
+                  summary: Apple recommendation
+                  value:
+                    recommendation_id: "AAPL_20250913_143022"
+                    symbol: "AAPL"
+                    prediction: "BUY"
+                    confidence: 0.87
+                    target_price: 185.50
+                    current_price: 175.23
+                    upside_potential: 0.0586
+                    timestamp: "2025-09-13T14:30:22Z"
+                    model_version: "v2.1"
+                    features_used: 42
+                    risk_score: 0.23
+                    ttl: 1726246222
+        '404':
+          description: Stock symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_found:
+                  summary: Symbol not found
+                  value:
+                    error: "Stock symbol not found"
+                    message: "No recommendations available for symbol: XYZ"
+                    code: "SYMBOL_NOT_FOUND"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /dual-predictions/analytics:
+    get:
+      tags:
+        - Analytics
+      summary: Get dual prediction analytics
+      description: Retrieve comprehensive analytics for both price and time prediction models
+      responses:
+        '200':
+          description: Successful response with dual prediction analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  price_model:
+                    $ref: '#/components/schemas/ModelAnalytics'
+                  time_model:
+                    $ref: '#/components/schemas/ModelAnalytics'
+                  combined_metrics:
+                    $ref: '#/components/schemas/CombinedMetrics'
+                  last_updated:
+                    type: string
+                    format: date-time
+              examples:
+                analytics_response:
+                  summary: Dual prediction analytics
+                  value:
+                    price_model:
+                      accuracy: 0.672
+                      prediction_count: 1247
+                      avg_confidence: 0.78
+                      hit_rate_7d: 0.685
+                      sharpe_ratio: 1.23
+                      max_drawdown: 0.087
+                    time_model:
+                      accuracy: 0.634
+                      prediction_count: 1189
+                      avg_confidence: 0.71
+                      hit_rate_7d: 0.651
+                      avg_days_to_target: 12.4
+                      success_rate: 0.678
+                    combined_metrics:
+                      overall_performance: 0.653
+                      market_outperformance: 0.032
+                      risk_adjusted_return: 1.18
+                    last_updated: "2025-09-13T14:30:22Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /analytics/dashboard:
+    get:
+      tags:
+        - Analytics
+      summary: Get comprehensive dashboard analytics
+      description: Retrieve all analytics data for the performance dashboard including model performance, market comparison, and risk metrics
+      responses:
+        '200':
+          description: Successful response with dashboard analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  performance_summary:
+                    type: object
+                    properties:
+                      current_hit_rate:
+                        type: number
+                        format: float
+                        description: Current prediction hit rate
+                      target_hit_rate:
+                        type: number
+                        format: float
+                        description: Target hit rate threshold
+                      market_outperformance:
+                        type: number
+                        format: float
+                        description: Performance vs S&P 500
+                      sharpe_ratio:
+                        type: number
+                        format: float
+                        description: Risk-adjusted return ratio
+                      max_drawdown:
+                        type: number
+                        format: float
+                        description: Maximum portfolio drawdown
+                  model_metrics:
+                    type: object
+                    properties:
+                      price_model:
+                        $ref: '#/components/schemas/ModelAnalytics'
+                      time_model:
+                        $ref: '#/components/schemas/ModelAnalytics'
+                  recent_performance:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                        hit_rate:
+                          type: number
+                          format: float
+                        predictions_count:
+                          type: integer
+                        profit_loss:
+                          type: number
+                          format: float
+                  top_performers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        symbol:
+                          type: string
+                        accuracy:
+                          type: number
+                          format: float
+                        predictions:
+                          type: integer
+                        avg_return:
+                          type: number
+                          format: float
+                  system_health:
+                    type: object
+                    properties:
+                      data_freshness:
+                        type: string
+                        format: date-time
+                      api_latency:
+                        type: number
+                        format: float
+                        description: Average API response time in ms
+                      cache_hit_rate:
+                        type: number
+                        format: float
+                      error_rate:
+                        type: number
+                        format: float
+              examples:
+                dashboard_response:
+                  summary: Comprehensive dashboard
+                  value:
+                    performance_summary:
+                      current_hit_rate: 0.672
+                      target_hit_rate: 0.65
+                      market_outperformance: 0.032
+                      sharpe_ratio: 1.23
+                      max_drawdown: 0.087
+                    model_metrics:
+                      price_model:
+                        accuracy: 0.672
+                        prediction_count: 1247
+                        avg_confidence: 0.78
+                        hit_rate_7d: 0.685
+                      time_model:
+                        accuracy: 0.634
+                        prediction_count: 1189
+                        avg_confidence: 0.71
+                        hit_rate_7d: 0.651
+                    recent_performance:
+                      - date: "2025-09-12"
+                        hit_rate: 0.68
+                        predictions_count: 45
+                        profit_loss: 1247.32
+                      - date: "2025-09-11"
+                        hit_rate: 0.71
+                        predictions_count: 52
+                        profit_loss: 1834.56
+                    top_performers:
+                      - symbol: "AAPL"
+                        accuracy: 0.89
+                        predictions: 23
+                        avg_return: 0.045
+                      - symbol: "GOOGL"
+                        accuracy: 0.85
+                        predictions: 19
+                        avg_return: 0.038
+                    system_health:
+                      data_freshness: "2025-09-13T14:25:00Z"
+                      api_latency: 145.2
+                      cache_hit_rate: 0.92
+                      error_rate: 0.003
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API key for authentication. Include your API key in the `x-api-key` header.
+
+  schemas:
+    StockRecommendation:
+      type: object
+      required:
+        - recommendation_id
+        - symbol
+        - prediction
+        - confidence
+        - timestamp
+      properties:
+        recommendation_id:
+          type: string
+          description: Unique identifier for the recommendation
+          example: "AAPL_20250913_143022"
+        symbol:
+          type: string
+          description: Stock ticker symbol
+          pattern: '^[A-Z]{1,5}$'
+          example: "AAPL"
+        prediction:
+          type: string
+          enum: [BUY, SELL, HOLD]
+          description: ML model prediction recommendation
+          example: "BUY"
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Model confidence score (0-1)
+          example: 0.87
+        target_price:
+          type: number
+          format: float
+          minimum: 0
+          description: Predicted target price
+          example: 185.50
+        current_price:
+          type: number
+          format: float
+          minimum: 0
+          description: Current market price
+          example: 175.23
+        upside_potential:
+          type: number
+          format: float
+          description: Percentage upside potential
+          example: 0.0586
+        timestamp:
+          type: string
+          format: date-time
+          description: When the recommendation was generated
+          example: "2025-09-13T14:30:22Z"
+        model_version:
+          type: string
+          description: ML model version used
+          example: "v2.1"
+        features_used:
+          type: integer
+          description: Number of features used in prediction
+          minimum: 1
+          example: 42
+        risk_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Risk assessment score (0-1, lower is safer)
+          example: 0.23
+        ttl:
+          type: integer
+          description: TTL timestamp for cache expiration
+          example: 1726246222
+
+    ModelAnalytics:
+      type: object
+      properties:
+        accuracy:
+          type: number
+          format: float
+          description: Overall model accuracy
+          minimum: 0
+          maximum: 1
+          example: 0.672
+        prediction_count:
+          type: integer
+          description: Total number of predictions made
+          minimum: 0
+          example: 1247
+        avg_confidence:
+          type: number
+          format: float
+          description: Average confidence score
+          minimum: 0
+          maximum: 1
+          example: 0.78
+        hit_rate_7d:
+          type: number
+          format: float
+          description: Hit rate over last 7 days
+          minimum: 0
+          maximum: 1
+          example: 0.685
+        sharpe_ratio:
+          type: number
+          format: float
+          description: Risk-adjusted return ratio
+          example: 1.23
+        max_drawdown:
+          type: number
+          format: float
+          description: Maximum portfolio drawdown
+          example: 0.087
+        avg_days_to_target:
+          type: number
+          format: float
+          description: Average days to reach target (time model only)
+          example: 12.4
+        success_rate:
+          type: number
+          format: float
+          description: Success rate for time predictions
+          example: 0.678
+
+    CombinedMetrics:
+      type: object
+      properties:
+        overall_performance:
+          type: number
+          format: float
+          description: Combined performance metric
+          example: 0.653
+        market_outperformance:
+          type: number
+          format: float
+          description: Outperformance vs market benchmark
+          example: 0.032
+        risk_adjusted_return:
+          type: number
+          format: float
+          description: Risk-adjusted return metric
+          example: 1.18
+
+    PaginationMeta:
+      type: object
+      properties:
+        total_count:
+          type: integer
+          description: Total number of available items
+          example: 147
+        page:
+          type: integer
+          description: Current page number (0-based)
+          example: 0
+        limit:
+          type: integer
+          description: Number of items per page
+          example: 50
+        has_next:
+          type: boolean
+          description: Whether there are more pages available
+          example: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type identifier
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid stock symbol format. Expected 1-5 uppercase letters."
+        code:
+          type: string
+          description: Specific error code
+          example: "INVALID_SYMBOL_FORMAT"
+        details:
+          type: object
+          description: Additional error details
+        timestamp:
+          type: string
+          format: date-time
+          description: When the error occurred
+          example: "2025-09-13T14:30:22Z"
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_symbol:
+              summary: Invalid stock symbol
+              value:
+                error: "VALIDATION_ERROR"
+                message: "Invalid stock symbol format. Expected 1-5 uppercase letters."
+                code: "INVALID_SYMBOL_FORMAT"
+                timestamp: "2025-09-13T14:30:22Z"
+            invalid_limit:
+              summary: Invalid limit parameter
+              value:
+                error: "VALIDATION_ERROR"
+                message: "Limit parameter must be between 1 and 100"
+                code: "INVALID_LIMIT"
+                timestamp: "2025-09-13T14:30:22Z"
+
+    Unauthorized:
+      description: Unauthorized - missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missing_key:
+              summary: Missing API key
+              value:
+                error: "UNAUTHORIZED"
+                message: "API key is required. Include x-api-key header."
+                code: "MISSING_API_KEY"
+                timestamp: "2025-09-13T14:30:22Z"
+            invalid_key:
+              summary: Invalid API key
+              value:
+                error: "UNAUTHORIZED"
+                message: "Invalid API key provided"
+                code: "INVALID_API_KEY"
+                timestamp: "2025-09-13T14:30:22Z"
+
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            rate_limit:
+              summary: Rate limit exceeded
+              value:
+                error: "RATE_LIMITED"
+                message: "Rate limit exceeded. Maximum 100 requests per second."
+                code: "RATE_LIMIT_EXCEEDED"
+                details:
+                  current_rate: 150
+                  limit: 100
+                  reset_time: "2025-09-13T14:31:00Z"
+                timestamp: "2025-09-13T14:30:22Z"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            server_error:
+              summary: Internal server error
+              value:
+                error: "INTERNAL_ERROR"
+                message: "An internal server error occurred. Please try again later."
+                code: "INTERNAL_SERVER_ERROR"
+                timestamp: "2025-09-13T14:30:22Z"
+
+tags:
+  - name: Stock Recommendations
+    description: ML-powered stock recommendations and predictions
+  - name: Analytics
+    description: Performance analytics and model metrics

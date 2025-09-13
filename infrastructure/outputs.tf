@@ -179,3 +179,33 @@ output "infrastructure_summary" {
     )
   }
 }
+
+# Swagger UI and API Documentation outputs
+output "swagger_ui_url" {
+  description = "URL to access Swagger UI documentation"
+  value       = "http://${aws_s3_bucket_website_configuration.swagger_ui_website.website_endpoint}"
+}
+
+output "swagger_ui_cloudfront_url" {
+  description = "CloudFront URL for Swagger UI (if enabled)"
+  value       = var.enable_cloudfront_for_docs ? "https://${aws_cloudfront_distribution.swagger_ui_distribution[0].domain_name}" : "CloudFront not enabled"
+}
+
+output "api_documentation_urls" {
+  description = "All available URLs for API documentation"
+  value = {
+    s3_website     = "http://${aws_s3_bucket_website_configuration.swagger_ui_website.website_endpoint}"
+    swagger_spec   = "http://${aws_s3_bucket_website_configuration.swagger_ui_website.website_endpoint}/swagger.yaml"
+    cloudfront_url = var.enable_cloudfront_for_docs ? "https://${aws_cloudfront_distribution.swagger_ui_distribution[0].domain_name}" : "Not enabled"
+  }
+}
+
+output "documentation_bucket" {
+  description = "S3 bucket hosting the API documentation"
+  value       = aws_s3_bucket.swagger_ui.bucket
+}
+
+output "api_cloudfront_url" {
+  description = "CloudFront URL for API caching (if enabled)"
+  value       = var.enable_cloudfront_for_api ? "https://${aws_cloudfront_distribution.api_distribution[0].domain_name}" : "CloudFront not enabled"
+}

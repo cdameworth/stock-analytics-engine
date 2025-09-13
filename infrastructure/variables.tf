@@ -100,6 +100,19 @@ variable "enable_graviton_instances" {
   default     = true
 }
 
+# Swagger UI and Documentation variables
+variable "enable_cloudfront_for_docs" {
+  description = "Enable CloudFront distribution for Swagger UI documentation"
+  type        = bool
+  default     = false
+}
+
+variable "enable_cloudfront_for_api" {
+  description = "Enable CloudFront distribution for API Gateway caching"
+  type        = bool
+  default     = false
+}
+
 variable "enable_sagemaker_serverless" {
   description = "Enable SageMaker serverless inference"
   type        = bool
@@ -211,6 +224,12 @@ variable "lambda_provisioned_concurrency_count" {
 
 variable "notification_email" {
   description = "Email address for daily analytics reports"
+  type        = string
+  sensitive   = true
+}
+
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications"
   type        = string
   sensitive   = true
 }

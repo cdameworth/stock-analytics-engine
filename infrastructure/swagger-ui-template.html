@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>${api_title} Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+    <link rel="icon" type="image/png" href="https://unpkg.com/swagger-ui-dist@5.9.0/favicon-32x32.png" sizes="32x32" />
+    <link rel="icon" type="image/png" href="https://unpkg.com/swagger-ui-dist@5.9.0/favicon-16x16.png" sizes="16x16" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+
+        body {
+            margin:0;
+            background: #fafafa;
+        }
+
+        .swagger-ui .topbar {
+            background-color: #1f4e79;
+            border-bottom: 3px solid #547aa5;
+        }
+
+        .swagger-ui .topbar .download-url-wrapper .select-label {
+            color: #ffffff;
+        }
+
+        .swagger-ui .topbar .download-url-wrapper input[type=text] {
+            border: 2px solid #547aa5;
+        }
+
+        .swagger-ui .info h1 {
+            color: #1f4e79;
+        }
+
+        .swagger-ui .info .title {
+            color: #1f4e79;
+        }
+
+        /* Custom header styling */
+        .api-header {
+            background: linear-gradient(135deg, #1f4e79 0%, #2a5f8f 100%);
+            color: white;
+            padding: 20px 0;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .api-header .container {
+            max-width: 1460px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .api-header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .api-status {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .status-badge {
+            background: #4caf50;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .api-version {
+            background: rgba(255,255,255,0.2);
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        /* Quick start section */
+        .quick-start {
+            background: white;
+            margin: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-left: 4px solid #1f4e79;
+        }
+
+        .quick-start h3 {
+            margin: 0 0 15px 0;
+            color: #1f4e79;
+            font-size: 18px;
+        }
+
+        .quick-start code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+        }
+
+        .quick-start pre {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .auth-note {
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+
+        .auth-note strong {
+            color: #533f03;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="api-header">
+        <div class="container">
+            <h1>${api_title}</h1>
+            <div class="api-status">
+                <span class="status-badge">Live</span>
+                <span class="api-version">v1.0.0</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="quick-start">
+        <h3>🚀 Quick Start</h3>
+        <div class="auth-note">
+            <strong>🔑 Authentication Required:</strong> All API endpoints require an API key. Include your API key in the <code>x-api-key</code> header with every request.
+        </div>
+
+        <p><strong>Base URL:</strong> <code>${api_base_url}</code></p>
+
+        <p><strong>Example Request:</strong></p>
+        <pre>curl -H "x-api-key: YOUR_API_KEY_HERE" \
+     "${api_base_url}/recommendations"</pre>
+
+        <p><strong>Rate Limits:</strong></p>
+        <ul>
+            <li>100 requests per second</li>
+            <li>200 burst limit</li>
+            <li>10,000 requests per month</li>
+        </ul>
+
+        <p><strong>Key Endpoints:</strong></p>
+        <ul>
+            <li><code>GET /recommendations</code> - Get all stock recommendations</li>
+            <li><code>GET /recommendations/{symbol}</code> - Get recommendation for specific stock</li>
+            <li><code>GET /analytics/dashboard</code> - Get comprehensive performance analytics</li>
+            <li><code>GET /dual-predictions/analytics</code> - Get dual prediction model analytics</li>
+        </ul>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js" charset="UTF-8"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
+    <script>
+        window.onload = function() {
+            // Begin Swagger UI call region
+            const ui = SwaggerUIBundle({
+                url: '${swagger_spec_url}',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                // Configure API key authentication
+                onComplete: function() {
+                    // Pre-populate the API key if available in localStorage
+                    const savedApiKey = localStorage.getItem('stock-analytics-api-key');
+                    if (savedApiKey) {
+                        ui.preauthorizeApiKey('ApiKeyAuth', savedApiKey);
+                    }
+                },
+                // Custom request interceptor to ensure API key is included
+                requestInterceptor: function(req) {
+                    // Save API key to localStorage when used
+                    if (req.headers && req.headers['x-api-key']) {
+                        localStorage.setItem('stock-analytics-api-key', req.headers['x-api-key']);
+                    }
+
+                    // Ensure the request goes to the correct server
+                    if (!req.url.startsWith('http')) {
+                        req.url = '${api_base_url}' + req.url;
+                    }
+
+                    return req;
+                },
+                // Custom response interceptor for better error handling
+                responseInterceptor: function(res) {
+                    // Handle common API errors
+                    if (res.status === 403 || res.status === 401) {
+                        console.warn('Authentication failed. Please check your API key.');
+                    }
+                    if (res.status === 429) {
+                        console.warn('Rate limit exceeded. Please wait before making more requests.');
+                    }
+                    return res;
+                }
+            });
+            // End Swagger UI call region
+
+            window.ui = ui;
+
+            // Add custom functionality
+            setTimeout(function() {
+                // Add API key helper
+                const authSection = document.querySelector('.auth-wrapper');
+                if (authSection) {
+                    const helper = document.createElement('div');
+                    helper.innerHTML = '<p style="margin-top: 10px; font-size: 12px; color: #666;"><strong>💡 Tip:</strong> Your API key will be remembered for this session.</p>';
+                    authSection.appendChild(helper);
+                }
+
+                // Add warning for missing API key
+                const tryItOutButtons = document.querySelectorAll('.btn.try-out');
+                tryItOutButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        setTimeout(() => {
+                            const executeButton = document.querySelector('.btn.execute');
+                            if (executeButton && !localStorage.getItem('stock-analytics-api-key')) {
+                                executeButton.style.background = '#ff6b6b';
+                                executeButton.title = 'Remember to set your API key in the authentication section above!';
+                            }
+                        }, 100);
+                    });
+                });
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
