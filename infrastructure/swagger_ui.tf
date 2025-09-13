@@ -77,7 +77,7 @@ resource "aws_s3_object" "swagger_ui_html" {
 
   content = templatefile("${path.module}/swagger-ui-template.html", {
     api_title       = "Stock Analytics Engine API"
-    swagger_spec_url = "swagger.yaml"
+    swagger_spec_url = "http://${aws_s3_bucket_website_configuration.swagger_ui_website.website_endpoint}/swagger.yaml"
     api_base_url    = "https://${aws_api_gateway_rest_api.stock_recommendations_api.id}.execute-api.${data.aws_region.current.name}.amazonaws.com/prod"
   })
 
