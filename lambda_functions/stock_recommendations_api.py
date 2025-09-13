@@ -488,7 +488,8 @@ def format_recommendation(item):
         return {
             'recommendation_id': item.get('recommendation_id'),
             'symbol': item.get('symbol'),
-            'recommendation_type': item.get('recommendation_type'),
+            'prediction': item.get('recommendation_type'),  # Map recommendation_type to prediction field for Swagger spec
+            'recommendation_type': item.get('recommendation_type'),  # Keep for backward compatibility
             'prediction_score': float(item.get('prediction_score', 0)),
             'confidence': float(item.get('confidence', 0)),
             'current_price': float(item.get('current_price', 0)),
