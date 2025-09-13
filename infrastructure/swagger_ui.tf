@@ -210,7 +210,6 @@ resource "aws_cloudfront_distribution" "api_distribution" {
   count = var.enable_cloudfront_for_api ? 1 : 0
 
   origin {
-    domain_name = replace(aws_api_gateway_rest_api.stock_recommendations_api.execution_arn, "arn:aws:execute-api:", "")
     domain_name = "${aws_api_gateway_rest_api.stock_recommendations_api.id}.execute-api.${data.aws_region.current.name}.amazonaws.com"
     origin_id   = "api-gateway-origin"
     origin_path = "/prod"
