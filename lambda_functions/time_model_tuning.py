@@ -23,6 +23,7 @@ cloudwatch = boto3.client('cloudwatch')
 TIME_PREDICTIONS_TABLE = os.environ.get('TIME_PREDICTIONS_TABLE', 'time-to-hit-predictions')
 TUNING_HISTORY_TABLE = os.environ.get('TUNING_HISTORY_TABLE', 'model-tuning-history')
 TIME_PREDICTION_FUNCTION = os.environ.get('TIME_PREDICTION_FUNCTION', 'time-to-hit-predictor')
+TUNING_REPORTER_FUNCTION = os.environ.get('TUNING_REPORTER_FUNCTION', 'model-tuning-reporter')
 
 def lambda_handler(event, context):
     """
