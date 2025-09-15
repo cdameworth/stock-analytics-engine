@@ -10,6 +10,31 @@ variable "alpha_vantage_api_key" {
   sensitive   = true
 }
 
+variable "newsapi_key" {
+  description = "NewsAPI.org API Key for news sentiment analysis"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "finnhub_key" {
+  description = "Finnhub API Key for news sentiment analysis"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "lambda_function_names" {
+  description = "List of Lambda function names that need sentiment cache access"
+  type        = list(string)
+  default     = [
+    "enhanced-feature-extractor",
+    "news-sentiment-analyzer",
+    "ml-model-inference-tier",
+    "stock-data-ingestion"
+  ]
+}
+
 variable "db_instance_class" {
   description = "Database instance class"
   type        = string

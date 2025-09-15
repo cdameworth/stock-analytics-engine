@@ -19,6 +19,9 @@ logger.setLevel(logging.INFO)
 # Alpha Vantage API client
 import requests
 
+# Import sentiment analyzer
+from news_sentiment_analyzer import NewsSentimentAnalyzer
+
 class EnhancedFeatureExtractor:
     """
     Enhanced feature extraction for stock prediction models
@@ -32,6 +35,9 @@ class EnhancedFeatureExtractor:
         # Cache for expensive API calls
         self.cache = {}
         self.cache_ttl = 3600  # 1 hour cache
+
+        # Initialize sentiment analyzer
+        self.sentiment_analyzer = NewsSentimentAnalyzer()
 
     def extract_comprehensive_features(self, symbol: str, current_data: Dict) -> Dict:
         """
@@ -258,12 +264,21 @@ class EnhancedFeatureExtractor:
             return {}
 
     def _extract_sentiment_features(self, symbol: str) -> Dict:
-        """Extract sentiment-based features"""
+        """Extract sentiment-based features using real news sentiment analysis"""
         try:
             features = {}
 
-            # News sentiment (placeholder - would integrate with news API)
-            features['news_sentiment'] = self._get_news_sentiment_score(symbol)
+            # Real news sentiment analysis
+            sentiment_metrics = self.sentiment_analyzer.get_news_sentiment(symbol, lookback_hours=24)
+
+            features['news_sentiment_overall'] = sentiment_metrics.overall_sentiment
+            features['news_sentiment_momentum'] = sentiment_metrics.sentiment_momentum
+            features['news_volume'] = sentiment_metrics.news_volume
+            features['news_relevance'] = sentiment_metrics.average_relevance
+            features['sentiment_volatility'] = sentiment_metrics.sentiment_volatility
+            features['bullish_ratio'] = sentiment_metrics.bullish_ratio
+            features['bearish_ratio'] = sentiment_metrics.bearish_ratio
+            features['neutral_ratio'] = sentiment_metrics.neutral_ratio
 
             # Social media sentiment (placeholder - would integrate with social APIs)
             features['social_sentiment'] = self._get_social_sentiment_score(symbol)
@@ -274,11 +289,33 @@ class EnhancedFeatureExtractor:
             # Insider trading activity (simplified)
             features['insider_activity'] = self._get_insider_activity_score(symbol)
 
+            # Market fear/greed indicator based on sentiment distribution
+            if sentiment_metrics.news_volume > 0:
+                fear_greed_ratio = sentiment_metrics.bearish_ratio / max(sentiment_metrics.bullish_ratio, 0.01)
+                features['market_fear_greed'] = min(2.0, max(0.0, fear_greed_ratio))
+            else:
+                features['market_fear_greed'] = 1.0  # Neutral
+
+            logger.info(f"Extracted sentiment features for {symbol}: overall={sentiment_metrics.overall_sentiment:.3f}, volume={sentiment_metrics.news_volume}")
             return features
 
         except Exception as e:
             logger.warning(f"Error extracting sentiment features: {str(e)}")
-            return {}
+            # Return default sentiment features on error
+            return {
+                'news_sentiment_overall': 0.0,
+                'news_sentiment_momentum': 0.0,
+                'news_volume': 0,
+                'news_relevance': 0.0,
+                'sentiment_volatility': 0.0,
+                'bullish_ratio': 0.33,
+                'bearish_ratio': 0.33,
+                'neutral_ratio': 0.34,
+                'social_sentiment': 0.0,
+                'options_sentiment': 0.0,
+                'insider_activity': 0.0,
+                'market_fear_greed': 1.0
+            }
 
     # Technical indicator calculation methods
     def _calculate_stochastic(self, df: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> Tuple[float, float]:

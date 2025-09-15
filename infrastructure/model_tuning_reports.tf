@@ -296,16 +296,16 @@ resource "aws_cloudwatch_event_target" "time_model_tuning_target" {
 }
 
 # Lambda permissions for EventBridge to invoke tuning functions
-resource "aws_lambda_permission" "allow_eventbridge_price_tuning" {
-  statement_id  = "AllowExecutionFromEventBridgePriceTuning"
+resource "aws_lambda_permission" "allow_eventbridge_price_tuning_reports" {
+  statement_id  = "AllowExecutionFromEventBridgePriceTuningReports"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.price_model_tuning_updated.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.weekly_price_model_tuning_with_reports.arn
 }
 
-resource "aws_lambda_permission" "allow_eventbridge_time_tuning" {
-  statement_id  = "AllowExecutionFromEventBridgeTimeTuning"
+resource "aws_lambda_permission" "allow_eventbridge_time_tuning_reports" {
+  statement_id  = "AllowExecutionFromEventBridgeTimeTuningReports"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.time_model_tuning_updated.function_name
   principal     = "events.amazonaws.com"
