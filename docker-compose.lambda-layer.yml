@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  lambda-layer:
+    build:
+      context: .
+      dockerfile: Dockerfile.lambda-layer
+    volumes:
+      - ./layer-output:/output
+    command: cp -r /opt/python /output/

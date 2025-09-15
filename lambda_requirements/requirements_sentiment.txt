@@ -1,0 +1,5 @@
+# Lambda layer requirements for sentiment analysis
+requests==2.31.0
+boto3>=1.26.0
+numpy>=1.24.0
+pandas>=1.5.0

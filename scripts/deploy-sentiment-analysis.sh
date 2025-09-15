@@ -58,7 +58,9 @@ deploy_sentiment_analyzer() {
     # Create deployment package for sentiment analyzer
     zip -q news_sentiment_analyzer.zip news_sentiment_analyzer.py
 
-    # Deploy or update sentiment analyzer function
+    # Deploy or update sentiment analyzer function with AWS pandas layer
+    AWS_PANDAS_LAYER="arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python311:22"
+
     aws lambda create-function \
         --function-name news-sentiment-analyzer \
         --runtime python3.11 \
@@ -67,6 +69,7 @@ deploy_sentiment_analyzer() {
         --zip-file fileb://news_sentiment_analyzer.zip \
         --timeout 300 \
         --memory-size 1024 \
+        --layers "$AWS_PANDAS_LAYER" \
         --environment Variables='{}' \
         --profile $AWS_PROFILE 2>/dev/null || \
     aws lambda update-function-code \
@@ -74,11 +77,12 @@ deploy_sentiment_analyzer() {
         --zip-file fileb://news_sentiment_analyzer.zip \
         --profile $AWS_PROFILE
 
-    # Update function configuration if needed
+    # Update function configuration with AWS pandas layer
     aws lambda update-function-configuration \
         --function-name news-sentiment-analyzer \
         --timeout 300 \
         --memory-size 1024 \
+        --layers "$AWS_PANDAS_LAYER" \
         --profile $AWS_PROFILE > /dev/null
 
     print_success "Sentiment analyzer Lambda function deployed"
@@ -96,7 +100,10 @@ update_enhanced_feature_extractor() {
     # Create deployment package with both files
     zip -q enhanced_feature_extractor_with_sentiment.zip enhanced_feature_extractor.py news_sentiment_analyzer.py
 
-    # Update the enhanced feature extractor function
+    # Update the enhanced feature extractor function with AWS pandas layer
+    ALPHA_VANTAGE_KEY=$(aws secretsmanager get-secret-value --secret-id "stock-analytics-alpha-vantage-api-key" --query "SecretString" --output text --region us-east-1 --profile $AWS_PROFILE)
+    AWS_PANDAS_LAYER="arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python311:22"
+
     aws lambda update-function-code \
         --function-name enhanced-feature-extractor \
         --zip-file fileb://enhanced_feature_extractor_with_sentiment.zip \
@@ -109,10 +116,17 @@ update_enhanced_feature_extractor() {
         --zip-file fileb://enhanced_feature_extractor_with_sentiment.zip \
         --timeout 300 \
         --memory-size 1024 \
-        --environment Variables='{\
-            "ALPHA_VANTAGE_API_KEY":"'$(aws ssm get-parameter --name "/stock-analytics/alpha-vantage-api-key" --with-decryption --query "Parameter.Value" --output text --profile $AWS_PROFILE)'"\
-        }' \
+        --layers "$AWS_PANDAS_LAYER" \
+        --environment Variables="{\"ALPHA_VANTAGE_API_KEY\":\"$ALPHA_VANTAGE_KEY\"}" \
         --profile $AWS_PROFILE
+
+    # Update function configuration with AWS pandas layer
+    aws lambda update-function-configuration \
+        --function-name enhanced-feature-extractor \
+        --timeout 300 \
+        --memory-size 1024 \
+        --layers "$AWS_PANDAS_LAYER" \
+        --profile $AWS_PROFILE > /dev/null
 
     print_success "Enhanced feature extractor updated with sentiment capabilities"
 
@@ -237,8 +251,9 @@ analyze_deployment() {
     echo ""
     echo "🚀 What Was Deployed:"
     echo "  ✓ DynamoDB sentiment cache table with TTL"
-    echo "  ✓ News Sentiment Analyzer Lambda function"
-    echo "  ✓ Enhanced Feature Extractor with sentiment capabilities"
+    echo "  ✓ News Sentiment Analyzer Lambda function (with AWS pandas layer)"
+    echo "  ✓ Enhanced Feature Extractor with sentiment capabilities (with AWS pandas layer)"
+    echo "  ✓ Official AWS SDK Pandas Lambda layer (robust pandas/numpy)"
     echo "  ✓ IAM policies for DynamoDB access"
     echo "  ✓ SSM parameters for API key management"
     echo ""
