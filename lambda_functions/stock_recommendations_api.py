@@ -30,6 +30,10 @@ DYNAMODB_TABLE = os.environ['DYNAMODB_TABLE']
 REDIS_ENDPOINT = os.environ.get('REDIS_ENDPOINT')
 TIME_PREDICTOR_FUNCTION = os.environ.get('TIME_PREDICTOR_FUNCTION', 'time-to-hit-predictor')
 
+# Recommendation expiry configuration (in hours)
+RECOMMENDATION_TTL_HOURS = int(os.environ.get('RECOMMENDATION_TTL_HOURS', '24'))  # Default: 24 hours
+RECOMMENDATION_MAX_AGE_HOURS = int(os.environ.get('RECOMMENDATION_MAX_AGE_HOURS', '48'))  # Absolute maximum: 48 hours
+
 def _init_cache():
     global cache_client, cache_available, cache_init_attempted
     if cache_init_attempted or not VALKEY_ENDPOINT:
@@ -51,25 +55,38 @@ def _init_cache():
     except Exception as e:
         logger.warning(f"Valkey cache init failed ({e}); disabled")
 
-def get_trading_day_cutoff():
+def get_recommendation_cutoff():
     """
-    Get cutoff time based on trading days, not calendar days.
-    Shows recommendations from recent trading days with extended lookback.
+    Get cutoff time for active recommendations based on configurable TTL.
+    Filters out stale recommendations while preserving historical data.
     """
     now = datetime.utcnow()
+
+    # Primary cutoff: TTL-based expiry for active recommendations
+    primary_cutoff = now - timedelta(hours=RECOMMENDATION_TTL_HOURS)
+
+    # Weekend adjustment: if it's Monday and the TTL would exclude Friday data,
+    # extend the cutoff to include Friday's close
     current_weekday = now.weekday()  # Monday=0, Sunday=6
-    
-    # Very lenient cutoff - look back up to 7 days to ensure we have data during system issues
+
     if current_weekday == 0:  # Monday
-        cutoff = now - timedelta(days=7)  # Look back a full week to cover long weekends
-    elif current_weekday == 6:  # Sunday
-        cutoff = now - timedelta(days=6)  # Go back to Monday
-    elif current_weekday == 5:  # Saturday
-        cutoff = now - timedelta(days=5)  # Go back to Monday
+        # If TTL is less than 72 hours, extend to include Friday's data
+        friday_cutoff = now - timedelta(days=3)  # Go back to Friday
+        if primary_cutoff > friday_cutoff and RECOMMENDATION_TTL_HOURS < 72:
+            cutoff = friday_cutoff
+            logger.info(f"Monday adjustment: Extended cutoff to include Friday data")
+        else:
+            cutoff = primary_cutoff
     else:
-        cutoff = now - timedelta(days=5)  # Look back 5 days for other weekdays
-    
-    logger.info(f"Trading day cutoff calculated: {cutoff.isoformat()} (current day: {current_weekday}, extended lookback)")
+        cutoff = primary_cutoff
+
+    # Absolute maximum age safety check
+    max_cutoff = now - timedelta(hours=RECOMMENDATION_MAX_AGE_HOURS)
+    if cutoff < max_cutoff:
+        cutoff = max_cutoff
+        logger.info(f"Applied maximum age limit: {RECOMMENDATION_MAX_AGE_HOURS} hours")
+
+    logger.info(f"Recommendation cutoff: {cutoff.isoformat()} (TTL: {RECOMMENDATION_TTL_HOURS}h, Max: {RECOMMENDATION_MAX_AGE_HOURS}h)")
     return cutoff.isoformat()
 
 def get_time_prediction(symbol: str, current_price: float, target_price: float, recommendation_data: Dict) -> Optional[Dict]:
@@ -302,8 +319,8 @@ def get_recommendations(query_params):
         # Query DynamoDB
         table = dynamodb.Table(DYNAMODB_TABLE)
         
-        # Get recent recommendations (last trading day)
-        cutoff_time = get_trading_day_cutoff()
+        # Get active recommendations (within TTL)
+        cutoff_time = get_recommendation_cutoff()
         
         # Scan with filters (in production, you'd want to use GSI for better performance)
         # Explicitly filter for proper recommendations by requiring essential fields
@@ -365,7 +382,10 @@ def get_recommendations(query_params):
                 'risk_level': risk_level or 'all',
                 'min_confidence': min_confidence,
                 'limit': limit,
-                'time_predictions_included': include_time_prediction
+                'time_predictions_included': include_time_prediction,
+                'recommendation_ttl_hours': RECOMMENDATION_TTL_HOURS,
+                'max_age_hours': RECOMMENDATION_MAX_AGE_HOURS,
+                'cutoff_time': cutoff_time
             },
             'timestamp': datetime.utcnow().isoformat(),
             'cache_duration': 300  # 5 minutes
@@ -413,8 +433,8 @@ def get_recommendation_by_symbol(symbol, query_params):
         # Query DynamoDB
         table = dynamodb.Table(DYNAMODB_TABLE)
         
-        # Get recent recommendations for this symbol (last trading day)
-        cutoff_time = get_trading_day_cutoff()
+        # Get active recommendations for this symbol (within TTL)
+        cutoff_time = get_recommendation_cutoff()
         
         response = table.scan(
             FilterExpression="symbol = :symbol AND #ts > :cutoff AND attribute_exists(recommendation_type) AND attribute_exists(prediction_score)",

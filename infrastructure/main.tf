@@ -662,9 +662,11 @@ resource "aws_lambda_function" "stock_recommendations_api" {
 
   environment {
     variables = {
-      DYNAMODB_TABLE  = aws_dynamodb_table.stock_recommendations.name
-      VALKEY_ENDPOINT = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
-      REDIS_ENDPOINT  = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
+      DYNAMODB_TABLE                 = aws_dynamodb_table.stock_recommendations.name
+      VALKEY_ENDPOINT               = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
+      REDIS_ENDPOINT                = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
+      RECOMMENDATION_TTL_HOURS      = var.recommendation_ttl_hours
+      RECOMMENDATION_MAX_AGE_HOURS  = var.recommendation_max_age_hours
     }
   }
 

@@ -186,6 +186,18 @@ variable "stock_data_ingestion_schedule" {
   default     = "cron(*/5 14-21 ? * MON-FRI *)" # Every 5 minutes from 9:00 AM to 4:00 PM EST (14-21 UTC) - 96 runs per day
 }
 
+variable "recommendation_ttl_hours" {
+  description = "TTL for active recommendations in hours (filters stale recommendations from API)"
+  type        = number
+  default     = 24 # 24 hours - recommendations expire after 1 trading day
+}
+
+variable "recommendation_max_age_hours" {
+  description = "Maximum age for recommendations in hours (absolute safety limit)"
+  type        = number
+  default     = 48 # 48 hours - absolute maximum age, never show recommendations older than 2 days
+}
+
 variable "cost_alarm_threshold" {
   description = "Cost alarm threshold in USD"
   type        = number
