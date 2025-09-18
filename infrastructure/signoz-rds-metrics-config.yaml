@@ -1,0 +1,231 @@
+---
+# AWS RDS PostgreSQL Metrics Configuration for SigNoz
+# This configuration collects CloudWatch metrics for the stock-analytics-aurora cluster
+region: us-east-1
+metrics:
+ # Binary Log Disk Usage
+ - aws_namespace: AWS/RDS
+   aws_metric_name: BinLogDiskUsage
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Burst Balance for burstable instances
+ - aws_namespace: AWS/RDS
+   aws_metric_name: BurstBalance
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Checkpoint Lag
+ - aws_namespace: AWS/RDS
+   aws_metric_name: CheckpointLag
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Connection Attempts
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ConnectionAttempts
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # CPU Utilization
+ - aws_namespace: AWS/RDS
+   aws_metric_name: CPUUtilization
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Database Connections
+ - aws_namespace: AWS/RDS
+   aws_metric_name: DatabaseConnections
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Disk Queue Depth
+ - aws_namespace: AWS/RDS
+   aws_metric_name: DiskQueueDepth
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Log Volume Disk Queue Depth
+ - aws_namespace: AWS/RDS
+   aws_metric_name: DiskQueueDepthLogVolume
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # EBS Byte Balance
+ - aws_namespace: AWS/RDS
+   aws_metric_name: EBSByteBalance%
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # EBS IO Balance
+ - aws_namespace: AWS/RDS
+   aws_metric_name: EBSIOBalance%
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Freeable Memory
+ - aws_namespace: AWS/RDS
+   aws_metric_name: FreeableMemory
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Free Local Storage
+ - aws_namespace: AWS/RDS
+   aws_metric_name: FreeLocalStorage
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Free Storage Space
+ - aws_namespace: AWS/RDS
+   aws_metric_name: FreeStorageSpace
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Free Storage Space Log Volume
+ - aws_namespace: AWS/RDS
+   aws_metric_name: FreeStorageSpaceLogVolume
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Maximum Used Transaction IDs
+ - aws_namespace: AWS/RDS
+   aws_metric_name: MaximumUsedTransactionIDs
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Network Receive Throughput
+ - aws_namespace: AWS/RDS
+   aws_metric_name: NetworkReceiveThroughput
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Network Transmit Throughput
+ - aws_namespace: AWS/RDS
+   aws_metric_name: NetworkTransmitThroughput
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Oldest Replication Slot Lag
+ - aws_namespace: AWS/RDS
+   aws_metric_name: OldestReplicationSlotLag
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Read IOPS
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReadIOPS
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Read IOPS Local Storage
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReadIOPSLocalStorage
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Read IOPS Log Volume
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReadIOPSLogVolume
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Read Latency
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReadLatency
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Read Latency Local Storage
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReadLatencyLocalStorage
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Read Latency Log Volume
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReadLatencyLogVolume
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Read Throughput
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReadThroughput
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Read Throughput Log Volume
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReadThroughputLogVolume
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Replica Lag
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReplicaLag
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Replication Channel Lag
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReplicationChannelLag
+   aws_dimensions: [DBInstanceIdentifier]
+
+ # Replication Slot Disk Usage
+ - aws_namespace: AWS/RDS
+   aws_metric_name: ReplicationSlotDiskUsage
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Transaction Logs Disk Usage
+ - aws_namespace: AWS/RDS
+   aws_metric_name: TransactionLogsDiskUsage
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Transaction Logs Generation
+ - aws_namespace: AWS/RDS
+   aws_metric_name: TransactionLogsGeneration
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average]
+
+ # Write IOPS
+ - aws_namespace: AWS/RDS
+   aws_metric_name: WriteIOPS
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Write Latency
+ - aws_namespace: AWS/RDS
+   aws_metric_name: WriteLatency
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Write Throughput
+ - aws_namespace: AWS/RDS
+   aws_metric_name: WriteThroughput
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Swap Usage
+ - aws_namespace: AWS/RDS
+   aws_metric_name: SwapUsage
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Database Load
+ - aws_namespace: AWS/RDS
+   aws_metric_name: DBLoad
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Database Load CPU
+ - aws_namespace: AWS/RDS
+   aws_metric_name: DBLoadCPU
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]
+
+ # Database Load Non-CPU
+ - aws_namespace: AWS/RDS
+   aws_metric_name: DBLoadNonCPU
+   aws_dimensions: [DBInstanceIdentifier]
+   aws_statistics: [Average, Maximum]

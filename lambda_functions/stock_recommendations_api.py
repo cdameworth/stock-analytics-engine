@@ -45,7 +45,11 @@ def _init_cache():
             host=VALKEY_ENDPOINT,
             port=6379,
             decode_responses=True,
-            socket_timeout=1
+            socket_timeout=1,
+            socket_connect_timeout=2,
+            ssl=True,
+            ssl_check_hostname=False,
+            ssl_cert_reqs=None
         )
         cache_client.ping()
         cache_available = True
@@ -305,16 +309,16 @@ def get_recommendations(query_params):
         min_confidence = float(query_params.get('min_confidence', 0.0))
         include_time_prediction = query_params.get('include_time_prediction', 'true').lower() == 'true'
         
-        # Check cache first - TEMPORARILY DISABLED FOR DEBUGGING
-        # cache_key = f"recommendations:{recommendation_type}:{risk_level}:{min_confidence}:{limit}:{include_time_prediction}"
-        # cached_result = get_from_cache(cache_key)
-        # if cached_result:
-        #     logger.info("Returning cached recommendations")
-        #     return {
-        #         'statusCode': 200,
-        #         'headers': get_cors_headers(),
-        #         'body': cached_result
-        #     }
+        # Check cache first
+        cache_key = f"recommendations:{recommendation_type}:{risk_level}:{min_confidence}:{limit}:{include_time_prediction}"
+        cached_result = get_from_cache(cache_key)
+        if cached_result:
+            logger.info("Returning cached recommendations")
+            return {
+                'statusCode': 200,
+                'headers': get_cors_headers(),
+                'body': cached_result
+            }
         
         # Query DynamoDB
         table = dynamodb.Table(DYNAMODB_TABLE)
@@ -393,8 +397,8 @@ def get_recommendations(query_params):
         
         response_body = json.dumps(response_data, default=decimal_default)
         
-        # Cache the result - temporarily disabled
-        # cache_result(cache_key, response_body, 300)  # 5 minutes
+        # Cache the result
+        cache_result(cache_key, response_body, 300)  # 5 minutes
         
         logger.info(f"Returning {len(recommendations)} recommendations")
         

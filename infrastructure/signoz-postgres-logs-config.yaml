@@ -1,0 +1,140 @@
+receivers:
+  # AWS CloudWatch Logs receiver for RDS PostgreSQL logs
+  awscloudwatch/rds_postgres_logs:
+    region: us-east-1
+    logs:
+      poll_interval: 1m
+      groups:
+        named:
+          # Aurora PostgreSQL log groups (update these with actual log group names)
+          # Common Aurora PostgreSQL log groups:
+          "/aws/rds/instance/stock-analytics-aurora-lowcost-0/postgresql":
+          "/aws/rds/instance/stock-analytics-aurora-tier-0/postgresql":
+          "/aws/rds/instance/stock-analytics-aurora-tier-1/postgresql":
+          # Alternative potential log group patterns:
+          "/aws/rds/cluster/stock-analytics-aurora/postgresql":
+          "/aws/rds/instance/stock-analytics-aurora/postgresql":
+          # Error logs
+          "/aws/rds/instance/stock-analytics-aurora-lowcost-0/error":
+          "/aws/rds/instance/stock-analytics-aurora-tier-0/error":
+          "/aws/rds/instance/stock-analytics-aurora-tier-1/error":
+    # Rate limiting to prevent throttling
+    rate_limit:
+      logs_per_second: 100
+
+processors:
+  # Add source identification for better categorization in SigNoz
+  attributes/add_source_postgres:
+    actions:
+      - key: source
+        value: "rds_postgres"
+        action: insert
+      - key: service.name
+        value: "stock-analytics-rds"
+        action: insert
+      - key: service.namespace
+        value: "stock-analytics"
+        action: insert
+      - key: deployment.environment
+        value: "${env:ENVIRONMENT:-production}"
+        action: insert
+      - key: cloud.provider
+        value: "aws"
+        action: insert
+      - key: cloud.platform
+        value: "aws_rds"
+        action: insert
+      - key: db.system
+        value: "postgresql"
+        action: insert
+      - key: db.name
+        value: "stockanalytics"
+        action: insert
+
+  # Batch processing for efficiency
+  batch:
+    send_batch_size: 10000
+    send_batch_max_size: 11000
+    timeout: 10s
+
+  # Memory limiter to prevent resource exhaustion
+  memory_limiter:
+    limit_mib: 512
+    spike_limit_mib: 128
+    check_interval: 5s
+
+  # Resource processor for consistent metadata
+  resource:
+    attributes:
+      - key: service.name
+        value: "stock-analytics-postgres"
+        action: upsert
+      - key: service.version
+        value: "15.10"
+        action: upsert
+
+  # Filter processor to remove sensitive data (optional)
+  filter/sensitive_data:
+    logs:
+      exclude:
+        match_type: regexp
+        record_attributes:
+          - key: "body"
+            value: ".*(password|secret|token|key).*"
+
+exporters:
+  # Export to SigNoz Cloud
+  otlp/postgres_logs:
+    endpoint: "${env:OTLP_DESTINATION_ENDPOINT}"
+    tls:
+      insecure: false
+    headers:
+      "signoz-access-token": "${env:SIGNOZ_INGESTION_KEY}"
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 100
+    compression: gzip
+
+  # Optional: Export to local collector for debugging
+  otlp/local:
+    endpoint: "localhost:4317"
+    tls:
+      insecure: true
+
+  # Debug exporter for troubleshooting
+  logging:
+    loglevel: info
+    sampling_initial: 2
+    sampling_thereafter: 500
+
+service:
+  telemetry:
+    logs:
+      level: info
+      development: false
+      sampling:
+        initial: 2
+        thereafter: 500
+    metrics:
+      level: basic
+      address: 0.0.0.0:8888
+
+  extensions: []
+
+  pipelines:
+    logs/postgres:
+      receivers: [awscloudwatch/rds_postgres_logs]
+      processors: [memory_limiter, attributes/add_source_postgres, resource, filter/sensitive_data, batch]
+      exporters: [otlp/postgres_logs]
+
+    # Optional pipeline for local debugging
+    # logs/debug:
+    #   receivers: [awscloudwatch/rds_postgres_logs]
+    #   processors: [attributes/add_source_postgres]
+    #   exporters: [logging]

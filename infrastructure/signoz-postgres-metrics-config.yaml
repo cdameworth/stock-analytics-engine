@@ -1,0 +1,151 @@
+receivers:
+  # PostgreSQL database metrics collection
+  postgresql:
+    # Aurora PostgreSQL endpoint from our infrastructure
+    endpoint: ${env:POSTGRESQL_ENDPOINT}
+    # Collection frequency - balanced for performance and observability
+    collection_interval: 60s
+    # PostgreSQL credentials
+    username: ${env:POSTGRESQL_USERNAME}
+    password: ${env:POSTGRESQL_PASSWORD}
+    # Target database - our stock analytics database
+    databases: ["stockanalytics"]
+    # Use TCP connection for Aurora
+    transport: tcp
+    # TLS configuration for Aurora
+    tls:
+      insecure_skip_verify: true
+    # Extended metrics for comprehensive monitoring
+    metrics:
+      postgresql.database.locks:
+        enabled: true
+      postgresql.deadlocks:
+        enabled: true
+      postgresql.sequential_scans:
+        enabled: true
+      postgresql.index.scans:
+        enabled: true
+      postgresql.table.size:
+        enabled: true
+      postgresql.table.vacuum.count:
+        enabled: true
+      postgresql.bgwriter.buffers.allocated:
+        enabled: true
+      postgresql.bgwriter.buffers.writes:
+        enabled: true
+      postgresql.bgwriter.checkpoint.count:
+        enabled: true
+      postgresql.replication.lag:
+        enabled: true
+
+  # CloudWatch metrics via Prometheus exporter
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'aws-rds-cloudwatch-metrics'
+          scrape_timeout: 120s
+          scrape_interval: 300s
+          static_configs:
+            - targets: ['0.0.0.0:9106']
+          metric_relabel_configs:
+            # Add custom labels for better organization in SigNoz
+            - target_label: 'service_name'
+              replacement: 'stock-analytics-rds'
+            - target_label: 'environment'
+              replacement: 'production'
+            - target_label: 'component'
+              replacement: 'database'
+
+processors:
+  # Add resource attributes for better categorization
+  resource:
+    attributes:
+      - key: service.name
+        value: "stock-analytics-postgres"
+        action: upsert
+      - key: service.namespace
+        value: "stock-analytics"
+        action: upsert
+      - key: deployment.environment
+        value: "${env:ENVIRONMENT:-production}"
+        action: upsert
+      - key: cloud.provider
+        value: "aws"
+        action: upsert
+      - key: cloud.platform
+        value: "aws_rds"
+        action: upsert
+      - key: db.system
+        value: "postgresql"
+        action: upsert
+      - key: db.name
+        value: "stockanalytics"
+        action: upsert
+
+  # Batch processing for efficiency
+  batch:
+    send_batch_size: 1000
+    send_batch_max_size: 1500
+    timeout: 10s
+
+  # Memory limiter to prevent OOM
+  memory_limiter:
+    limit_mib: 512
+    spike_limit_mib: 128
+    check_interval: 5s
+
+exporters:
+  # Export to SigNoz Cloud
+  otlp/signoz:
+    endpoint: "${env:OTLP_DESTINATION_ENDPOINT}"
+    tls:
+      insecure: false
+    headers:
+      "signoz-access-token": "${env:SIGNOZ_INGESTION_KEY}"
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 100
+
+  # Optional: Export to local collector for debugging
+  otlp/local:
+    endpoint: "localhost:4317"
+    tls:
+      insecure: true
+
+  # Debug exporter for troubleshooting (enable only when needed)
+  debug:
+    verbosity: basic
+    sampling_initial: 2
+    sampling_thereafter: 500
+
+service:
+  telemetry:
+    logs:
+      level: info
+      development: false
+      sampling:
+        initial: 2
+        thereafter: 500
+    metrics:
+      level: basic
+      address: 0.0.0.0:8888
+
+  extensions: []
+
+  pipelines:
+    metrics/postgresql:
+      receivers: [postgresql, prometheus]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/signoz]
+
+    # Optional pipeline for local debugging
+    # metrics/debug:
+    #   receivers: [postgresql]
+    #   processors: [resource]
+    #   exporters: [debug]

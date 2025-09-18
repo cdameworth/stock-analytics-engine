@@ -142,12 +142,10 @@ terraform apply -var-file="terraform-tier1.tfvars" -auto-approve
 ### Lambda Functions
 - **stock_data_ingestion.py**: Market data collection and processing
 - **stock_recommendations_api.py**: Main API request handling
-- **lambda_functions/advanced_model_tuning_service.py**: Master orchestrator for market-beating optimization
-- **lambda_functions/backtesting_engine.py**: Walk-forward validation with market benchmarks
-- **lambda_functions/fundamental_data_enrichment.py**: P/E ratios and earnings analysis
-- **lambda_functions/ensemble_model_engine.py**: Multi-algorithm ML training
-- **lambda_functions/market_validation_engine.py**: S&P 500 compliance validation
-- **lambda_functions/ai_performance_reporter.py**: Performance analytics and reporting
+- **lambda_functions/price_model_tuning.py**: Price prediction model optimization and tuning
+- **lambda_functions/time_model_tuning.py**: Time-to-hit prediction model optimization
+- **lambda_functions/dual_accuracy_tracker.py**: Performance monitoring and analytics tracking
+- **lambda_functions/model_tuning_reporter.py**: Model optimization reporting and insights
 
 ## 💰 Cost Optimization & Tiers
 

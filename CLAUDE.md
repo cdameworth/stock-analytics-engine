@@ -71,14 +71,19 @@ curl -H "x-api-key: lp1ISnIC60ambkegNj3yn1SHaX8EVuQ41pECFNfq" \
 
 ### Lambda Function Management
 ```bash
-# Trigger model tuning manually
-aws lambda invoke --function-name advanced-model-tuning-service \
-  --payload '{"action":"comprehensive_tuning","lookback_days":90}' \
+# Trigger model tuning manually (price model)
+aws lambda invoke --function-name price-model-tuning \
+  --payload '{"lookback_days":90}' \
+  --profile stock-analytics-admin response.json
+
+# Trigger time model tuning
+aws lambda invoke --function-name time-model-tuning \
+  --payload '{"lookback_days":90}' \
   --profile stock-analytics-admin response.json
 
 # Monitor Lambda logs
 aws logs tail /aws/lambda/stock-data-ingestion --follow --profile stock-analytics-admin
-aws logs tail /aws/lambda/ml-model-inference-tier --follow --profile stock-analytics-admin
+aws logs tail /aws/lambda/ml-model-inference-lowcost --follow --profile stock-analytics-admin
 ```
 
 ## Key Configuration Files

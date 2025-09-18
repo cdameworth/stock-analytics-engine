@@ -1,0 +1,167 @@
+# OpenTelemetry Collector Configuration for Grafana Cloud Integration
+# This configuration receives telemetry data from Lambda functions and forwards to Grafana Cloud
+
+receivers:
+  # OTLP receiver for traces, metrics, and logs from Lambda functions
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # AWS X-Ray receiver for existing X-Ray traces
+  awsxray:
+    endpoint: 0.0.0.0:2000
+    transport: udp
+
+  # CloudWatch metrics receiver for AWS native metrics
+  awscloudwatch:
+    region: us-east-1
+    metrics:
+      - namespace: "AWS/Lambda"
+        metric_names: ["Duration", "Errors", "Invocations", "Throttles"]
+        dimensions:
+          - name: "FunctionName"
+            value: "stock-*"
+      - namespace: "AWS/DynamoDB"
+        metric_names: ["ConsumedReadCapacityUnits", "ConsumedWriteCapacityUnits", "SuccessfulRequestLatency"]
+        dimensions:
+          - name: "TableName"
+            value: "stock-recommendations"
+      - namespace: "AWS/ElastiCache"
+        metric_names: ["CPUUtilization", "DatabaseMemoryUsagePercentage", "CacheMisses", "CacheHits"]
+        dimensions:
+          - name: "CacheClusterId"
+            value: "stock-analytics-valkey-*"
+      - namespace: "AWS/ApiGateway"
+        metric_names: ["Count", "Latency", "4XXError", "5XXError"]
+        dimensions:
+          - name: "ApiName"
+            value: "stock-recommendations-api"
+
+processors:
+  # Batch processor to optimize performance
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+  # Resource processor to add standard attributes
+  resource:
+    attributes:
+      - key: service.namespace
+        value: stock-analytics
+        action: upsert
+      - key: deployment.environment
+        value: ${environment}
+        action: upsert
+      - key: cloud.provider
+        value: aws
+        action: upsert
+      - key: cloud.region
+        value: us-east-1
+        action: upsert
+
+  # Attributes processor for custom business metrics
+  attributes:
+    actions:
+      - key: business.context
+        value: financial-analytics
+        action: insert
+      - key: data.sensitivity
+        value: high
+        action: insert
+
+  # Memory limiter to prevent OOM
+  memory_limiter:
+    limit_mib: 256
+
+  # Transform processor for custom metrics naming
+  transform:
+    metric_statements:
+      - context: metric
+        statements:
+          - set(description, "Stock Analytics Business Metric") where name == "stock_analytics.*"
+
+exporters:
+  # Grafana Cloud OTLP exporter - primary destination
+  otlp/grafana:
+    endpoint: ${grafana_otlp_endpoint}
+    headers:
+      Authorization: "Basic ${grafana_auth_header}"
+    compression: gzip
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+  # AWS X-Ray exporter for native AWS integration
+  awsxray:
+    no_verify_ssl: false
+    local_mode: false
+
+  # CloudWatch metrics exporter for AWS native metrics
+  awscloudwatchmetrics:
+    region: us-east-1
+    namespace: StockAnalytics/OpenTelemetry
+    dimension_rollup_option: "NoDimensionRollup"
+    metric_declarations:
+      - dimensions: [[service.name], [service.name, operation]]
+        metric_name_selectors:
+          - ".*duration.*"
+          - ".*latency.*"
+          - ".*request.*"
+      - dimensions: [[service.name]]
+        metric_name_selectors:
+          - ".*error.*"
+          - ".*exception.*"
+
+  # Debug exporter for troubleshooting (disabled in production)
+  debug:
+    verbosity: basic
+
+  # File exporter for local debugging
+  file:
+    path: /tmp/otel-output.json
+
+extensions:
+  # Health check extension
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  # Performance profiling extension
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+  # Z-Pages extension for debugging
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+
+  pipelines:
+    # Traces pipeline
+    traces:
+      receivers: [otlp, awsxray]
+      processors: [memory_limiter, resource, attributes, batch]
+      exporters: [otlp/grafana, awsxray]
+
+    # Metrics pipeline
+    metrics:
+      receivers: [otlp, awscloudwatch]
+      processors: [memory_limiter, resource, attributes, transform, batch]
+      exporters: [otlp/grafana, awscloudwatchmetrics]
+
+    # Logs pipeline
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, attributes, batch]
+      exporters: [otlp/grafana]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888

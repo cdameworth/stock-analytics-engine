@@ -164,7 +164,11 @@ def _init_cache():
             host=VALKEY_ENDPOINT,
             port=6379,
             decode_responses=True,
-            socket_timeout=1
+            socket_timeout=1,
+            socket_connect_timeout=2,
+            ssl=True,
+            ssl_check_hostname=False,
+            ssl_cert_reqs=None
         )
         cache_client.ping()
         cache_available = True

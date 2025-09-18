@@ -310,7 +310,7 @@ resource "aws_db_subnet_group" "aurora" {
 resource "aws_rds_cluster" "stock_analytics_aurora" {
   cluster_identifier          = "stock-analytics-aurora"
   engine                      = "aurora-postgresql"
-  engine_version              = "15.4"
+  engine_version              = "15.10"
   database_name               = "stockanalytics"
   master_username             = "postgres"
   manage_master_user_password = true
@@ -513,7 +513,7 @@ resource "aws_sagemaker_endpoint_configuration" "stock_prediction_endpoint_confi
 # Lambda Function
 data "archive_file" "ml_model_inference" {
   type        = "zip"
-  source_file = "${path.module}/../lambda_functions/ml_model_inference.py"
+  source_file = "${path.module}/../lambda_functions/ml_inference_native.py"
   output_path = "${path.module}/ml_model_inference.zip"
 }
 
@@ -535,7 +535,7 @@ resource "aws_lambda_function" "ml_model_inference" {
   source_code_hash = data.archive_file.ml_model_inference.output_base64sha256
   function_name    = var.lambda_memory_size > 512 ? "ml-model-inference-tier" : "ml-model-inference-lowcost"
   role             = aws_iam_role.lambda_execution_role.arn
-  handler          = "ml_model_inference.lambda_handler"
+  handler          = "ml_inference_native.lambda_handler"
   runtime          = "python3.11"
   timeout          = var.lambda_timeout
   memory_size      = var.lambda_memory_size

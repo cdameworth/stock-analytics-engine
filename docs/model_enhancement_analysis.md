@@ -39,11 +39,11 @@
 - **Options Sentiment**: Framework for put/call ratio analysis (ready for data feeds)
 - **Insider Activity**: Framework for SEC filing analysis (ready for implementation)
 
-**Infrastructure Deployed:**
-- **Multi-source News Aggregation**: Alpha Vantage News API, NewsAPI.org, Finnhub
+**Infrastructure Components:**
+- **News Integration**: Framework for multi-source news aggregation (Alpha Vantage News API ready)
 - **DynamoDB Cache Layer**: TTL-enabled sentiment caching for API rate limiting
-- **Lambda Functions**: `news-sentiment-analyzer` and `enhanced-feature-extractor`
-- **Automated Deployment**: Complete CI/CD pipeline with testing validation
+- **ML Model Integration**: Enhanced feature integration in existing prediction models
+- **Data Processing**: Automated data collection and processing pipeline
 
 **Performance Impact:**
 - **Feature Count**: Increased from 8 to 60+ features (650% increase)
@@ -320,8 +320,8 @@ Your model has strong technical foundations but is missing critical fundamental,
 - **Expected +9% accuracy improvement** from 68.5% baseline to 77.5% target
 
 ### **Technical Implementation:**
-- **`news_sentiment_analyzer.py`**: Standalone sentiment analysis service with rate limiting
-- **`enhanced_feature_extractor.py`**: Updated with real sentiment integration
+- **Sentiment Analysis**: Framework for news sentiment analysis with rate limiting
+- **Feature Enhancement**: Updated ML models with sentiment integration capabilities
 - **DynamoDB sentiment cache**: TTL-enabled caching for API efficiency
 - **Automated deployment**: `deploy-sentiment-analysis.sh` with comprehensive testing
 - **Cost optimization**: ~$15-35/month additional operational cost

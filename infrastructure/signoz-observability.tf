@@ -1,0 +1,439 @@
+# SigNoz and OpenTelemetry Infrastructure for Stock Analytics Engine
+# Replaces Grafana Cloud integration with SigNoz Cloud
+
+# ADOT (AWS Distro for OpenTelemetry) Collector Lambda Layer
+locals {
+  # Use our custom OpenTelemetry Lambda Layer ARN
+  adot_layer_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:layer:stock-analytics-otel-python:1"
+
+  # OpenTelemetry Python instrumentations - use our custom layer
+  otel_python_layer_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:layer:stock-analytics-otel-python:1"
+
+  # Common OpenTelemetry environment variables for SigNoz
+  otel_base_config = {
+    # OpenTelemetry configuration
+    OTEL_PROPAGATORS                 = "tracecontext,baggage,xray"
+    OTEL_PYTHON_DISTRO               = "aws_distro"
+    OTEL_PYTHON_CONFIGURATOR         = "aws_lambda_configurator"
+    OTEL_LAMBDA_DISABLE_AWS_CONTEXT_PROPAGATION = "false"
+
+    # SigNoz Cloud OTLP endpoint configuration
+    OTEL_EXPORTER_OTLP_ENDPOINT      = var.signoz_otlp_endpoint
+    OTEL_EXPORTER_OTLP_HEADERS       = "signoz-access-token=${var.signoz_ingestion_key}"
+    OTEL_EXPORTER_OTLP_PROTOCOL      = "grpc"
+
+    # Service naming and resource attributes
+    OTEL_SERVICE_NAME                = "stock-analytics-engine"
+    OTEL_RESOURCE_ATTRIBUTES         = "service.namespace=stock-analytics,deployment.environment=${var.environment}"
+
+    # Sampling configuration for cost optimization
+    OTEL_TRACES_SAMPLER              = "traceidratio"
+    OTEL_TRACES_SAMPLER_ARG          = var.otel_trace_sampling_ratio
+
+    # Metrics and logs configuration
+    OTEL_METRICS_EXPORTER            = "otlp"
+    OTEL_LOGS_EXPORTER              = "otlp"
+
+    # AWS X-Ray integration
+    AWS_LAMBDA_EXEC_WRAPPER         = "/opt/otel-instrument"
+    _AWS_LAMBDA_TELEMETRY_LOG_FD    = "1"
+  }
+}
+
+# CloudWatch OTEL Collector Configuration for SigNoz
+resource "aws_ssm_parameter" "signoz_otel_collector_config" {
+  name  = "/stock-analytics/otel/signoz-collector-config"
+  type  = "String"
+  tier  = "Advanced"
+  value = templatefile("${path.module}/signoz-postgres-metrics-config.yaml", {
+    signoz_otlp_endpoint  = var.signoz_otlp_endpoint
+    signoz_ingestion_key = var.signoz_ingestion_key
+    environment          = var.environment
+    postgresql_endpoint  = aws_rds_cluster.stock_analytics_aurora.endpoint
+  })
+
+  description = "OpenTelemetry Collector configuration for SigNoz Cloud integration"
+
+  tags = merge(
+    {
+      Name = "signoz-otel-collector-config"
+      Purpose = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# SigNoz RDS Metrics Configuration
+resource "aws_ssm_parameter" "signoz_rds_metrics_config" {
+  name  = "/stock-analytics/otel/signoz-rds-metrics-config"
+  type  = "String"
+  tier  = "Advanced"
+  value = file("${path.module}/signoz-rds-metrics-config.yaml")
+
+  description = "AWS RDS metrics configuration for SigNoz CloudWatch exporter"
+
+  tags = merge(
+    {
+      Name = "signoz-rds-metrics-config"
+      Purpose = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# SigNoz RDS Logs Configuration
+resource "aws_ssm_parameter" "signoz_rds_logs_config" {
+  name  = "/stock-analytics/otel/signoz-rds-logs-config"
+  type  = "String"
+  tier  = "Advanced"
+  value = templatefile("${path.module}/signoz-postgres-logs-config.yaml", {
+    signoz_otlp_endpoint  = var.signoz_otlp_endpoint
+    signoz_ingestion_key = var.signoz_ingestion_key
+    environment          = var.environment
+  })
+
+  description = "AWS RDS logs configuration for SigNoz integration"
+
+  tags = merge(
+    {
+      Name = "signoz-rds-logs-config"
+      Purpose = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# Custom metrics namespace for business logic
+resource "aws_cloudwatch_log_group" "signoz_otel_metrics" {
+  name              = "/aws/otel/stock-analytics-signoz"
+  retention_in_days = var.otel_log_retention_days
+
+  tags = merge(
+    {
+      Name = "signoz-otel-metrics-logs"
+      Purpose = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# Lambda Layer for OpenTelemetry Python instrumentation (reuse existing)
+# Note: This references the existing layer from observability.tf
+
+# Enhanced IAM policy for OpenTelemetry operations with SigNoz
+resource "aws_iam_role_policy" "lambda_signoz_otel_permissions" {
+  name = "lambda-signoz-otel-observability-policy"
+  role = aws_iam_role.lambda_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "xray:PutTraceSegments",
+          "xray:PutTelemetryRecords",
+          "xray:GetSamplingRules",
+          "xray:GetSamplingTargets",
+          "xray:GetSamplingStatisticSummaries"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = [
+          aws_ssm_parameter.signoz_otel_collector_config.arn,
+          aws_ssm_parameter.signoz_rds_metrics_config.arn,
+          aws_ssm_parameter.signoz_rds_logs_config.arn,
+          "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/stock-analytics/otel/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = [
+          aws_cloudwatch_log_group.signoz_otel_metrics.arn,
+          "${aws_cloudwatch_log_group.signoz_otel_metrics.arn}:*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:DescribeLogGroups",
+          "logs:FilterLogEvents"
+        ]
+        Resource = [
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/rds/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:ListMetrics",
+          "cloudwatch:GetMetricStatistics",
+          "cloudwatch:GetMetricData"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ECS Task Definition for OpenTelemetry Collector with SigNoz (if using ECS)
+resource "aws_ecs_task_definition" "signoz_otel_collector" {
+  count                    = var.enable_ecs_otel_collector ? 1 : 0
+  family                   = "stock-analytics-signoz-otel-collector"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 512
+  memory                   = 1024
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role[0].arn
+  task_role_arn           = aws_iam_role.ecs_task_role[0].arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "cloudwatch-exporter"
+      image = "prom/cloudwatch-exporter:v0.15.5"
+      cpu   = 256
+      memory = 512
+      essential = true
+      environment = [
+        {
+          name  = "AWS_REGION"
+          value = data.aws_region.current.name
+        }
+      ]
+      command = [
+        "java", "-jar", "/cloudwatch_exporter-0.15.5-jar-with-dependencies.jar",
+        "9106", "/config/aws-rds-postgres-metrics.yaml"
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "rds-metrics-config"
+          containerPath = "/config"
+          readOnly     = true
+        }
+      ]
+      portMappings = [
+        {
+          containerPort = 9106
+          protocol      = "tcp"
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/aws/ecs/signoz-cloudwatch-exporter"
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+    },
+    {
+      name  = "otel-collector"
+      image = "otel/opentelemetry-collector-contrib:0.88.0"
+      cpu   = 256
+      memory = 512
+      essential = true
+      environment = [
+        {
+          name  = "POSTGRESQL_ENDPOINT"
+          value = aws_rds_cluster.stock_analytics_aurora.endpoint
+        },
+        {
+          name  = "POSTGRESQL_USERNAME"
+          value = "postgres"
+        },
+        {
+          name  = "OTLP_DESTINATION_ENDPOINT"
+          value = var.signoz_otlp_endpoint
+        },
+        {
+          name  = "SIGNOZ_INGESTION_KEY"
+          value = var.signoz_ingestion_key
+        },
+        {
+          name  = "ENVIRONMENT"
+          value = var.environment
+        }
+      ]
+      secrets = [
+        {
+          name      = "POSTGRESQL_PASSWORD"
+          valueFrom = aws_rds_cluster.stock_analytics_aurora.master_user_secret[0].secret_arn
+        }
+      ]
+      command = [
+        "--config=/config/postgres-metrics-collection-config.yaml",
+        "--config=/config/postgres-logs-collection-config.yaml"
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "postgres-metrics-config"
+          containerPath = "/config"
+          readOnly     = true
+        }
+      ]
+      portMappings = [
+        {
+          containerPort = 4317
+          protocol      = "tcp"
+        },
+        {
+          containerPort = 8888
+          protocol      = "tcp"
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/aws/ecs/signoz-otel-collector"
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+    }
+  ])
+
+  volume {
+    name = "rds-metrics-config"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.otel_config[0].id
+      root_directory = "/rds-metrics"
+    }
+  }
+
+  volume {
+    name = "postgres-metrics-config"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.otel_config[0].id
+      root_directory = "/postgres-metrics"
+    }
+  }
+
+  tags = merge(
+    {
+      Name = "signoz-otel-collector"
+      Purpose = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# ECS Service for SigNoz OTEL Collector
+resource "aws_ecs_service" "signoz_otel_collector" {
+  count           = var.enable_ecs_otel_collector ? 1 : 0
+  name            = "signoz-otel-collector"
+  cluster         = aws_ecs_cluster.stock_analytics[0].id
+  task_definition = aws_ecs_task_definition.signoz_otel_collector[0].arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+    security_groups  = [aws_security_group.ecs_tasks[0].id]
+    assign_public_ip = false
+  }
+
+  tags = merge(
+    {
+      Name = "signoz-otel-collector-service"
+      Purpose = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# CloudWatch Dashboard for SigNoz Integration Status
+resource "aws_cloudwatch_dashboard" "signoz_observability" {
+  dashboard_name = "StockAnalytics-SigNoz-Integration"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/Lambda", "Duration", "FunctionName", "stock-data-ingestion"],
+            ["AWS/Lambda", "Duration", "FunctionName", "ml-model-inference-lowcost"],
+            ["AWS/Lambda", "Duration", "FunctionName", "stock-recommendations-api"],
+            ["AWS/Lambda", "Duration", "FunctionName", "dual-prediction-reporting-api"]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "Lambda Function Durations"
+          period  = 300
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/Lambda", "Errors", "FunctionName", "stock-data-ingestion"],
+            ["AWS/Lambda", "Errors", "FunctionName", "ml-model-inference-lowcost"],
+            ["AWS/Lambda", "Errors", "FunctionName", "stock-recommendations-api"],
+            ["AWS/Lambda", "Errors", "FunctionName", "dual-prediction-reporting-api"]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "Lambda Function Errors"
+          period  = 300
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 24
+        height = 6
+
+        properties = {
+          metrics = [
+            ["StockAnalytics/DataIngestion", "SymbolsProcessed"],
+            ["StockAnalytics/DataIngestion", "APICallsUsed"],
+            ["StockAnalytics/MLInference", "PredictionsGenerated"],
+            ["StockAnalytics/MLInference", "AccuracyScore"]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "Business Metrics"
+          period  = 300
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 12
+        width  = 24
+        height = 6
+
+        properties = {
+          query   = "SOURCE '/aws/otel/stock-analytics-signoz' | fields @timestamp, @message | filter @message like /ERROR/ | sort @timestamp desc | limit 20"
+          region  = data.aws_region.current.name
+          title   = "Recent SigNoz Integration Errors"
+          view    = "table"
+        }
+      }
+    ]
+  })
+}

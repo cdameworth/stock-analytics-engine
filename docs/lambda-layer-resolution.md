@@ -7,7 +7,7 @@
 
 The Lambda function was failing with dependency errors:
 ```
-"errorMessage": "Unable to import module 'news_sentiment_analyzer': No module named 'requests'"
+"errorMessage": "Unable to import module: No module named 'requests'"
 "errorMessage": "Error importing numpy: you should not try to import numpy from its source directory"
 ```
 

@@ -1,0 +1,53 @@
+# OpenTelemetry Python instrumentation requirements for AWS Lambda
+# This creates a Lambda layer with comprehensive observability packages
+
+# Core OpenTelemetry components
+opentelemetry-api==1.20.0
+opentelemetry-sdk==1.20.0
+opentelemetry-semantic-conventions==0.41b0
+
+# Auto-instrumentation
+opentelemetry-instrumentation==0.41b0
+opentelemetry-bootstrap==0.41b0
+
+# AWS integrations
+opentelemetry-propagator-aws-xray==1.0.1
+opentelemetry-propagator-jaeger==1.20.0
+opentelemetry-propagator-b3==1.20.0
+
+# Instrumentation libraries for Lambda
+opentelemetry-instrumentation-aws-lambda==0.41b0
+opentelemetry-instrumentation-boto3sqs==0.41b0
+opentelemetry-instrumentation-botocore==0.41b0
+opentelemetry-instrumentation-requests==0.41b0
+opentelemetry-instrumentation-urllib3==0.41b0
+
+# Database instrumentations
+opentelemetry-instrumentation-redis==0.41b0
+opentelemetry-instrumentation-psycopg2==0.41b0
+opentelemetry-instrumentation-sqlite3==0.41b0
+
+# Python standard library instrumentations
+opentelemetry-instrumentation-logging==0.41b0
+opentelemetry-instrumentation-asyncio==0.41b0
+opentelemetry-instrumentation-threading==0.41b0
+
+# HTTP and web framework instrumentations
+opentelemetry-instrumentation-urllib==0.41b0
+opentelemetry-instrumentation-httpx==0.41b0
+
+# Exporters
+opentelemetry-exporter-otlp==1.20.0
+opentelemetry-exporter-otlp-proto-grpc==1.20.0
+opentelemetry-exporter-otlp-proto-http==1.20.0
+opentelemetry-exporter-jaeger==1.20.0
+opentelemetry-exporter-zipkin==1.20.0
+
+# AWS X-Ray integration
+opentelemetry-sdk-extension-aws==2.0.1
+
+# Prometheus metrics (optional)
+opentelemetry-exporter-prometheus==1.12.0rc1
+
+# JSON logging for structured logs
+opentelemetry-instrumentation-json-logging==0.41b0

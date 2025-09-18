@@ -22,8 +22,9 @@ resource "aws_dynamodb_table" "news_sentiment_cache" {
 
   # Global Secondary Index for querying by symbol
   global_secondary_index {
-    name     = "symbol-index"
-    hash_key = "symbol"
+    name            = "symbol-index"
+    hash_key        = "symbol"
+    projection_type = "ALL"
   }
 
   # Encryption at rest
