@@ -9,8 +9,8 @@ locals {
   # OpenTelemetry Python instrumentations - use our custom layer
   otel_python_layer_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:layer:stock-analytics-otel-python:1"
 
-  # Common OpenTelemetry environment variables for SigNoz
-  otel_base_config = {
+  # Common OpenTelemetry environment variables for SigNoz integration
+  otel_base_config = var.enable_signoz_integration ? {
     # OpenTelemetry configuration
     OTEL_PROPAGATORS                 = "tracecontext,baggage,xray"
     OTEL_PYTHON_DISTRO               = "aws_distro"
@@ -37,7 +37,10 @@ locals {
     # AWS X-Ray integration
     AWS_LAMBDA_EXEC_WRAPPER         = "/opt/otel-instrument"
     _AWS_LAMBDA_TELEMETRY_LOG_FD    = "1"
-  }
+  } : {}
+
+  # Convenience reference for the OTEL layer
+  otel_layer_arn = local.otel_python_layer_arn
 }
 
 # CloudWatch OTEL Collector Configuration for SigNoz

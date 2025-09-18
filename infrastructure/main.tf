@@ -13,41 +13,7 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Local configuration for OpenTelemetry
-locals {
-  # OTEL Lambda Layer ARN
-  otel_layer_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:layer:stock-analytics-otel-python:1"
-
-  # Base OTEL environment variables for SigNoz integration
-  otel_base_config = var.enable_signoz_integration ? {
-    # OpenTelemetry configuration
-    OTEL_PROPAGATORS                 = "tracecontext,baggage,xray"
-    OTEL_PYTHON_DISTRO               = "aws_distro"
-    OTEL_PYTHON_CONFIGURATOR         = "aws_lambda_configurator"
-    OTEL_LAMBDA_DISABLE_AWS_CONTEXT_PROPAGATION = "false"
-
-    # SigNoz Cloud OTLP endpoint configuration
-    OTEL_EXPORTER_OTLP_ENDPOINT      = var.signoz_otlp_endpoint
-    OTEL_EXPORTER_OTLP_HEADERS       = "signoz-access-token=${var.signoz_ingestion_key}"
-    OTEL_EXPORTER_OTLP_PROTOCOL      = "grpc"
-
-    # Service naming and resource attributes
-    OTEL_SERVICE_NAME                = "stock-analytics-engine"
-    OTEL_RESOURCE_ATTRIBUTES         = "service.namespace=stock-analytics,deployment.environment=${var.environment}"
-
-    # Sampling configuration for cost optimization
-    OTEL_TRACES_SAMPLER              = "traceidratio"
-    OTEL_TRACES_SAMPLER_ARG          = var.otel_trace_sampling_ratio
-
-    # Metrics and logs configuration
-    OTEL_METRICS_EXPORTER            = "otlp"
-    OTEL_LOGS_EXPORTER              = "otlp"
-
-    # AWS X-Ray integration
-    AWS_LAMBDA_EXEC_WRAPPER         = "/opt/otel-instrument"
-    _AWS_LAMBDA_TELEMETRY_LOG_FD    = "1"
-  } : {}
-}
+# Note: OTEL configuration moved to signoz-observability.tf to avoid conflicts
 
 data "aws_iam_policy_document" "lambda_assume_role" {
   statement {

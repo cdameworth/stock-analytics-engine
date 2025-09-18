@@ -14,11 +14,47 @@ variable "signoz_otlp_endpoint" {
 variable "signoz_ingestion_key" {
   description = "SigNoz Cloud ingestion key for authentication"
   type        = string
+  default     = ""
   sensitive   = true
-  validation {
-    condition     = length(var.signoz_ingestion_key) > 0
-    error_message = "SigNoz ingestion key cannot be empty."
-  }
+}
+
+variable "otel_trace_sampling_ratio" {
+  description = "OpenTelemetry trace sampling ratio (0.0 to 1.0)"
+  type        = string
+  default     = "0.1"
+}
+
+# Missing variables from removed observability files
+variable "otel_log_retention_days" {
+  description = "OpenTelemetry logs retention period in days"
+  type        = number
+  default     = 14
+}
+
+variable "xray_sampling_rate" {
+  description = "AWS X-Ray sampling rate (0.0 to 1.0)"
+  type        = number
+  default     = 0.1
+}
+
+variable "observability_alert_email" {
+  description = "Email address for observability alerts"
+  type        = string
+  default     = ""
+}
+
+# Legacy Grafana variables for compatibility
+variable "grafana_instance_id" {
+  description = "Grafana Cloud instance ID"
+  type        = string
+  default     = ""
+}
+
+variable "grafana_api_key" {
+  description = "Grafana Cloud API key"
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "signoz_api_key" {

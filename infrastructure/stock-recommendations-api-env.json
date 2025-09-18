@@ -1,0 +1,23 @@
+{
+  "Variables": {
+    "DYNAMODB_TABLE": "stock-recommendations",
+    "VALKEY_ENDPOINT": "stock-analytics-valkey.l43muw.cache.amazonaws.com",
+    "REDIS_ENDPOINT": "stock-analytics-valkey.l43muw.cache.amazonaws.com",
+    "RECOMMENDATION_TTL_HOURS": "24",
+    "RECOMMENDATION_MAX_AGE_HOURS": "48",
+    "OTEL_PROPAGATORS": "tracecontext,baggage,xray",
+    "OTEL_PYTHON_DISTRO": "aws_distro",
+    "OTEL_PYTHON_CONFIGURATOR": "aws_lambda_configurator",
+    "OTEL_LAMBDA_DISABLE_AWS_CONTEXT_PROPAGATION": "false",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "ingest.us.signoz.cloud:443",
+    "OTEL_EXPORTER_OTLP_HEADERS": "signoz-access-token=NyZfiwSS68wZgbU9QMPzWcY-Qo9bXGjmWLN7",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "OTEL_SERVICE_NAME": "stock-recommendations-api",
+    "OTEL_RESOURCE_ATTRIBUTES": "service.namespace=stock-analytics,deployment.environment=development",
+    "OTEL_TRACES_SAMPLER": "traceidratio",
+    "OTEL_TRACES_SAMPLER_ARG": "0.1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "AWS_LAMBDA_EXEC_WRAPPER": "/opt/otel-instrument"
+  }
+}

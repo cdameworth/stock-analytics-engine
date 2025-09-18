@@ -1,0 +1,28 @@
+{
+  "Variables": {
+    "ALPHA_VANTAGE_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:791060928878:secret:alpha_vantage_api_key-s0rwAF",
+    "S3_BUCKET": "stock-data-lake-20241213113143079800000003",
+    "DYNAMODB_TABLE": "stock-recommendations",
+    "VALKEY_ENDPOINT": "stock-analytics-valkey.l43muw.cache.amazonaws.com",
+    "ML_INFERENCE_FUNCTION_NAME": "ml-model-inference-lowcost",
+    "MAX_SYMBOLS_PER_RUN": "30",
+    "PER_CALL_TIMEOUT": "4",
+    "PREMIUM_API_CALLS_PER_MINUTE": "75",
+    "USE_PREMIUM_API_KEY": "true",
+    "COMPREHENSIVE_STOCK_COVERAGE": "true",
+    "OTEL_PROPAGATORS": "tracecontext,baggage,xray",
+    "OTEL_PYTHON_DISTRO": "aws_distro",
+    "OTEL_PYTHON_CONFIGURATOR": "aws_lambda_configurator",
+    "OTEL_LAMBDA_DISABLE_AWS_CONTEXT_PROPAGATION": "false",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "ingest.us.signoz.cloud:443",
+    "OTEL_EXPORTER_OTLP_HEADERS": "signoz-access-token=NyZfiwSS68wZgbU9QMPzWcY-Qo9bXGjmWLN7",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "OTEL_SERVICE_NAME": "stock-data-ingestion",
+    "OTEL_RESOURCE_ATTRIBUTES": "service.namespace=stock-analytics,deployment.environment=development",
+    "OTEL_TRACES_SAMPLER": "traceidratio",
+    "OTEL_TRACES_SAMPLER_ARG": "0.1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "AWS_LAMBDA_EXEC_WRAPPER": "/opt/otel-instrument"
+  }
+}
