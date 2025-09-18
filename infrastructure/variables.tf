@@ -180,6 +180,32 @@ variable "additional_tags" {
   default     = {}
 }
 
+# SigNoz Observability Variables
+variable "enable_signoz_integration" {
+  description = "Enable SigNoz Cloud integration for observability"
+  type        = bool
+  default     = false
+}
+
+variable "signoz_otlp_endpoint" {
+  description = "SigNoz Cloud OTLP endpoint"
+  type        = string
+  default     = "ingest.us.signoz.cloud:443"
+}
+
+variable "signoz_ingestion_key" {
+  description = "SigNoz Cloud ingestion key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "otel_trace_sampling_ratio" {
+  description = "OpenTelemetry trace sampling ratio (0.0 to 1.0)"
+  type        = string
+  default     = "0.1"
+}
+
 variable "stock_data_ingestion_schedule" {
   description = "MAXIMIZED schedule for stock data ingestion - runs every 5 minutes during market hours"
   type        = string

@@ -13,6 +13,42 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+# Local configuration for OpenTelemetry
+locals {
+  # OTEL Lambda Layer ARN
+  otel_layer_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:layer:stock-analytics-otel-python:1"
+
+  # Base OTEL environment variables for SigNoz integration
+  otel_base_config = var.enable_signoz_integration ? {
+    # OpenTelemetry configuration
+    OTEL_PROPAGATORS                 = "tracecontext,baggage,xray"
+    OTEL_PYTHON_DISTRO               = "aws_distro"
+    OTEL_PYTHON_CONFIGURATOR         = "aws_lambda_configurator"
+    OTEL_LAMBDA_DISABLE_AWS_CONTEXT_PROPAGATION = "false"
+
+    # SigNoz Cloud OTLP endpoint configuration
+    OTEL_EXPORTER_OTLP_ENDPOINT      = var.signoz_otlp_endpoint
+    OTEL_EXPORTER_OTLP_HEADERS       = "signoz-access-token=${var.signoz_ingestion_key}"
+    OTEL_EXPORTER_OTLP_PROTOCOL      = "grpc"
+
+    # Service naming and resource attributes
+    OTEL_SERVICE_NAME                = "stock-analytics-engine"
+    OTEL_RESOURCE_ATTRIBUTES         = "service.namespace=stock-analytics,deployment.environment=${var.environment}"
+
+    # Sampling configuration for cost optimization
+    OTEL_TRACES_SAMPLER              = "traceidratio"
+    OTEL_TRACES_SAMPLER_ARG          = var.otel_trace_sampling_ratio
+
+    # Metrics and logs configuration
+    OTEL_METRICS_EXPORTER            = "otlp"
+    OTEL_LOGS_EXPORTER              = "otlp"
+
+    # AWS X-Ray integration
+    AWS_LAMBDA_EXEC_WRAPPER         = "/opt/otel-instrument"
+    _AWS_LAMBDA_TELEMETRY_LOG_FD    = "1"
+  } : {}
+}
+
 data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -545,18 +581,26 @@ resource "aws_lambda_function" "ml_model_inference" {
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
+  layers = var.enable_signoz_integration ? [local.otel_layer_arn] : []
+
   environment {
-    variables = {
-      SAGEMAKER_ENDPOINT               = "disabled" # SageMaker endpoint removed
-      DYNAMODB_TABLE                   = aws_dynamodb_table.stock_recommendations.name
-      S3_BUCKET                        = aws_s3_bucket.stock_data_lake.bucket
-      RDS_ENDPOINT                     = aws_rds_cluster.stock_analytics_aurora.endpoint
-      VALKEY_ENDPOINT                  = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
-      REDIS_ENDPOINT                   = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
-      ALPHA_VANTAGE_API_KEY_SECRET_ARN = var.use_premium_api_key ? aws_secretsmanager_secret.alpha_vantage_premium_api_key.arn : aws_secretsmanager_secret.alpha_vantage_api_key.arn
-      PREMIUM_API_CALLS_PER_MINUTE     = var.premium_api_calls_per_minute
-      USE_PREMIUM_API_KEY              = var.use_premium_api_key
-    }
+    variables = merge(
+      {
+        SAGEMAKER_ENDPOINT               = "disabled" # SageMaker endpoint removed
+        DYNAMODB_TABLE                   = aws_dynamodb_table.stock_recommendations.name
+        S3_BUCKET                        = aws_s3_bucket.stock_data_lake.bucket
+        RDS_ENDPOINT                     = aws_rds_cluster.stock_analytics_aurora.endpoint
+        VALKEY_ENDPOINT                  = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
+        REDIS_ENDPOINT                   = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
+        ALPHA_VANTAGE_API_KEY_SECRET_ARN = var.use_premium_api_key ? aws_secretsmanager_secret.alpha_vantage_premium_api_key.arn : aws_secretsmanager_secret.alpha_vantage_api_key.arn
+        PREMIUM_API_CALLS_PER_MINUTE     = var.premium_api_calls_per_minute
+        USE_PREMIUM_API_KEY              = var.use_premium_api_key
+      },
+      local.otel_base_config,
+      var.enable_signoz_integration ? {
+        OTEL_SERVICE_NAME = "ml-model-inference"
+      } : {}
+    )
   }
 
   ephemeral_storage {
@@ -607,23 +651,29 @@ resource "aws_lambda_function" "stock_data_ingestion" {
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
-  layers = [
+  layers = concat([
     "arn:aws:lambda:us-east-1:791060928878:layer:valkey-redis-py311:1"
-  ]
+  ], var.enable_signoz_integration ? [local.otel_layer_arn] : [])
 
   environment {
-    variables = {
-      ALPHA_VANTAGE_API_KEY_SECRET_ARN = var.use_premium_api_key ? aws_secretsmanager_secret.alpha_vantage_premium_api_key.arn : aws_secretsmanager_secret.alpha_vantage_api_key.arn
-      S3_BUCKET                        = aws_s3_bucket.stock_data_lake.bucket
-      DYNAMODB_TABLE                   = aws_dynamodb_table.stock_recommendations.name
-      VALKEY_ENDPOINT                  = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
-      ML_INFERENCE_FUNCTION_NAME       = aws_lambda_function.ml_model_inference.function_name
-      MAX_SYMBOLS_PER_RUN              = var.use_premium_api_key ? "30" : "12"
-      PER_CALL_TIMEOUT                 = var.use_premium_api_key ? "4" : "8"
-      PREMIUM_API_CALLS_PER_MINUTE     = var.premium_api_calls_per_minute
-      USE_PREMIUM_API_KEY              = var.use_premium_api_key
-      COMPREHENSIVE_STOCK_COVERAGE     = var.use_premium_api_key ? "true" : "false"
-    }
+    variables = merge(
+      {
+        ALPHA_VANTAGE_API_KEY_SECRET_ARN = var.use_premium_api_key ? aws_secretsmanager_secret.alpha_vantage_premium_api_key.arn : aws_secretsmanager_secret.alpha_vantage_api_key.arn
+        S3_BUCKET                        = aws_s3_bucket.stock_data_lake.bucket
+        DYNAMODB_TABLE                   = aws_dynamodb_table.stock_recommendations.name
+        VALKEY_ENDPOINT                  = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
+        ML_INFERENCE_FUNCTION_NAME       = aws_lambda_function.ml_model_inference.function_name
+        MAX_SYMBOLS_PER_RUN              = var.use_premium_api_key ? "30" : "12"
+        PER_CALL_TIMEOUT                 = var.use_premium_api_key ? "4" : "8"
+        PREMIUM_API_CALLS_PER_MINUTE     = var.premium_api_calls_per_minute
+        USE_PREMIUM_API_KEY              = var.use_premium_api_key
+        COMPREHENSIVE_STOCK_COVERAGE     = var.use_premium_api_key ? "true" : "false"
+      },
+      local.otel_base_config,
+      var.enable_signoz_integration ? {
+        OTEL_SERVICE_NAME = "stock-data-ingestion"
+      } : {}
+    )
   }
 
   tags = merge(
@@ -660,14 +710,24 @@ resource "aws_lambda_function" "stock_recommendations_api" {
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
+  layers = concat([
+    "arn:aws:lambda:us-east-1:791060928878:layer:valkey-redis-py311:1"
+  ], var.enable_signoz_integration ? [local.otel_layer_arn] : [])
+
   environment {
-    variables = {
-      DYNAMODB_TABLE                 = aws_dynamodb_table.stock_recommendations.name
-      VALKEY_ENDPOINT               = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
-      REDIS_ENDPOINT                = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
-      RECOMMENDATION_TTL_HOURS      = var.recommendation_ttl_hours
-      RECOMMENDATION_MAX_AGE_HOURS  = var.recommendation_max_age_hours
-    }
+    variables = merge(
+      {
+        DYNAMODB_TABLE                 = aws_dynamodb_table.stock_recommendations.name
+        VALKEY_ENDPOINT               = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
+        REDIS_ENDPOINT                = aws_elasticache_replication_group.stock_analytics_valkey.primary_endpoint_address
+        RECOMMENDATION_TTL_HOURS      = var.recommendation_ttl_hours
+        RECOMMENDATION_MAX_AGE_HOURS  = var.recommendation_max_age_hours
+      },
+      local.otel_base_config,
+      var.enable_signoz_integration ? {
+        OTEL_SERVICE_NAME = "stock-recommendations-api"
+      } : {}
+    )
   }
 
   tags = merge(

@@ -177,12 +177,20 @@ resource "aws_lambda_function" "price_prediction_model" {
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
+  layers = var.enable_signoz_integration ? [local.otel_layer_arn] : []
+
   environment {
-    variables = {
-      PRICE_PREDICTIONS_TABLE = aws_dynamodb_table.price_predictions.name
-      S3_DATA_BUCKET          = aws_s3_bucket.stock_data_lake.id
-      RECOMMENDATIONS_TABLE   = aws_dynamodb_table.stock_recommendations.name
-    }
+    variables = merge(
+      {
+        PRICE_PREDICTIONS_TABLE = aws_dynamodb_table.price_predictions.name
+        S3_DATA_BUCKET          = aws_s3_bucket.stock_data_lake.id
+        RECOMMENDATIONS_TABLE   = aws_dynamodb_table.stock_recommendations.name
+      },
+      local.otel_base_config,
+      var.enable_signoz_integration ? {
+        OTEL_SERVICE_NAME = "price-prediction-model"
+      } : {}
+    )
   }
 
   depends_on = [null_resource.package_dual_prediction_functions]
@@ -203,16 +211,24 @@ resource "aws_lambda_function" "time_prediction_model" {
   timeout       = 300
   memory_size   = 512
 
+  layers = var.enable_signoz_integration ? [local.otel_layer_arn] : []
+
   vpc_config {
     subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
   environment {
-    variables = {
-      TIME_PREDICTIONS_TABLE = aws_dynamodb_table.time_predictions.name
-      S3_DATA_BUCKET         = aws_s3_bucket.stock_data_lake.id
-    }
+    variables = merge(
+      {
+        TIME_PREDICTIONS_TABLE = aws_dynamodb_table.time_predictions.name
+        S3_DATA_BUCKET         = aws_s3_bucket.stock_data_lake.id
+      },
+      local.otel_base_config,
+      var.enable_signoz_integration ? {
+        OTEL_SERVICE_NAME = "time-prediction-model"
+      } : {}
+    )
   }
 
   depends_on = [null_resource.package_dual_prediction_functions]
@@ -233,7 +249,9 @@ resource "aws_lambda_function" "dual_accuracy_tracker" {
   timeout       = 900
   memory_size   = 1024
 
-  layers = ["arn:aws:lambda:us-east-1:791060928878:layer:basic-python-deps:1"]
+  layers = concat([
+    "arn:aws:lambda:us-east-1:791060928878:layer:basic-python-deps:1"
+  ], var.enable_signoz_integration ? [local.otel_layer_arn] : [])
 
   vpc_config {
     subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
@@ -241,11 +259,17 @@ resource "aws_lambda_function" "dual_accuracy_tracker" {
   }
 
   environment {
-    variables = {
-      PRICE_PREDICTIONS_TABLE = aws_dynamodb_table.price_predictions.name
-      TIME_PREDICTIONS_TABLE  = aws_dynamodb_table.time_predictions.name
-      ACCURACY_METRICS_TABLE  = aws_dynamodb_table.accuracy_metrics.name
-    }
+    variables = merge(
+      {
+        PRICE_PREDICTIONS_TABLE = aws_dynamodb_table.price_predictions.name
+        TIME_PREDICTIONS_TABLE  = aws_dynamodb_table.time_predictions.name
+        ACCURACY_METRICS_TABLE  = aws_dynamodb_table.accuracy_metrics.name
+      },
+      local.otel_base_config,
+      var.enable_signoz_integration ? {
+        OTEL_SERVICE_NAME = "dual-accuracy-tracker"
+      } : {}
+    )
   }
 
   depends_on = [null_resource.package_dual_prediction_functions]

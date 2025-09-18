@@ -58,6 +58,19 @@ python3 run_tests.py
 python3 tests/test_framework.py
 ```
 
+### OpenTelemetry & Observability
+```bash
+# Check current OTEL status for all Lambda functions
+./scripts/fix-otel-lambda-issues.sh --check-only
+
+# Fix OTEL Lambda issues and deploy SigNoz integration
+export TF_VAR_signoz_ingestion_key="your-signoz-ingestion-key"
+./scripts/fix-otel-lambda-issues.sh
+
+# Plan OTEL changes without applying
+./scripts/fix-otel-lambda-issues.sh --plan-only
+```
+
 ### API Testing
 ```bash
 # Test main recommendations API
