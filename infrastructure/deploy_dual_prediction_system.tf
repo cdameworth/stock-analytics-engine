@@ -1,6 +1,20 @@
 # Dual Prediction System Deployment
 # Deploy price prediction, time prediction, accuracy tracking, and tuning systems
 
+# Local values for dual prediction system
+locals {
+  # OTEL layer ARN for dual prediction functions
+  otel_layer_arn = var.enable_signoz_integration ? local.custom_otel_layer_arn : ""
+
+  # Base OTEL configuration for dual prediction functions
+  otel_base_config = var.enable_signoz_integration ? {
+    OTEL_SERVICE_NAME = "dual-prediction"
+    OTEL_EXPORTER_OTLP_ENDPOINT  = "https://${var.signoz_otlp_endpoint}"
+    OTEL_EXPORTER_OTLP_HEADERS   = "signoz-ingestion-key=${var.signoz_ingestion_key}"
+    ENABLE_BUSINESS_TRACING      = "true"
+  } : {}
+}
+
 # Create deployment packages for dual prediction functions
 resource "null_resource" "package_dual_prediction_functions" {
   triggers = {
@@ -179,6 +193,11 @@ resource "aws_lambda_function" "price_prediction_model" {
 
   layers = var.enable_signoz_integration ? [local.otel_layer_arn] : []
 
+  # Enable X-Ray tracing for distributed tracing
+  tracing_config {
+    mode = "Active"
+  }
+
   environment {
     variables = merge(
       {
@@ -212,6 +231,11 @@ resource "aws_lambda_function" "time_prediction_model" {
   memory_size   = 512
 
   layers = var.enable_signoz_integration ? [local.otel_layer_arn] : []
+
+  # Enable X-Ray tracing for distributed tracing
+  tracing_config {
+    mode = "Active"
+  }
 
   vpc_config {
     subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
@@ -251,7 +275,12 @@ resource "aws_lambda_function" "dual_accuracy_tracker" {
 
   layers = concat([
     "arn:aws:lambda:us-east-1:791060928878:layer:basic-python-deps:1"
-  ], var.enable_signoz_integration ? [local.otel_layer_arn] : [])
+  ], local.common_otel_layers)
+
+  # Enable X-Ray tracing for distributed tracing
+  tracing_config {
+    mode = "Active"
+  }
 
   vpc_config {
     subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
@@ -265,10 +294,7 @@ resource "aws_lambda_function" "dual_accuracy_tracker" {
         TIME_PREDICTIONS_TABLE  = aws_dynamodb_table.time_predictions.name
         ACCURACY_METRICS_TABLE  = aws_dynamodb_table.accuracy_metrics.name
       },
-      local.otel_base_config,
-      var.enable_signoz_integration ? {
-        OTEL_SERVICE_NAME = "dual-accuracy-tracker"
-      } : {}
+      var.enable_signoz_integration ? local.get_lambda_environment.dual_accuracy_tracker : {}
     )
   }
 
@@ -289,6 +315,11 @@ resource "aws_lambda_function" "price_model_tuning" {
   runtime       = "python3.11"
   timeout       = 900
   memory_size   = 1024
+
+  # Enable X-Ray tracing for distributed tracing
+  tracing_config {
+    mode = "Active"
+  }
 
   vpc_config {
     subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
@@ -321,6 +352,11 @@ resource "aws_lambda_function" "time_model_tuning" {
   timeout       = 900
   memory_size   = 1024
 
+  # Enable X-Ray tracing for distributed tracing
+  tracing_config {
+    mode = "Active"
+  }
+
   vpc_config {
     subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
     security_group_ids = [aws_security_group.lambda_sg.id]
@@ -352,18 +388,28 @@ resource "aws_lambda_function" "dual_prediction_reporting" {
   timeout       = 300
   memory_size   = 512
 
+  layers = local.common_otel_layers
+
+  # Enable X-Ray tracing for distributed tracing
+  tracing_config {
+    mode = "Active"
+  }
+
   vpc_config {
     subnet_ids         = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
   environment {
-    variables = {
-      PRICE_PREDICTIONS_TABLE = aws_dynamodb_table.price_predictions.name
-      TIME_PREDICTIONS_TABLE  = aws_dynamodb_table.time_predictions.name
-      ACCURACY_METRICS_TABLE  = aws_dynamodb_table.accuracy_metrics.name
-      TUNING_HISTORY_TABLE    = aws_dynamodb_table.tuning_history.name
-    }
+    variables = merge(
+      {
+        PRICE_PREDICTIONS_TABLE = aws_dynamodb_table.price_predictions.name
+        TIME_PREDICTIONS_TABLE  = aws_dynamodb_table.time_predictions.name
+        ACCURACY_METRICS_TABLE  = aws_dynamodb_table.accuracy_metrics.name
+        TUNING_HISTORY_TABLE    = aws_dynamodb_table.tuning_history.name
+      },
+      var.enable_signoz_integration ? local.get_lambda_environment.dual_prediction_reporting_api : {}
+    )
   }
 
   depends_on = [null_resource.package_dual_prediction_functions]

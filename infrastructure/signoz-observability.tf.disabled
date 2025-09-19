@@ -36,7 +36,6 @@ locals {
 
     # AWS X-Ray integration
     AWS_LAMBDA_EXEC_WRAPPER         = "/opt/otel-instrument"
-    _AWS_LAMBDA_TELEMETRY_LOG_FD    = "1"
   } : {}
 
   # Convenience reference for the OTEL layer

@@ -16,6 +16,10 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional, Any, Union, Tuple
 
+# OpenTelemetry imports for custom tracing
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
 # Import shared utilities and types
 from shared.lambda_utils import (
     setup_logger, LambdaResponse, handle_lambda_errors,
@@ -31,6 +35,9 @@ from shared.ml_utils import PredictionEngine, MarketDataProcessor
 # Configure logging
 logger = setup_logger(__name__)
 config = get_config()
+
+# Initialize OpenTelemetry tracer
+tracer = trace.get_tracer(__name__)
 
 # Initialize AWS clients and helpers
 dynamodb = AWSClients.get_resource('dynamodb')
@@ -219,68 +226,98 @@ def lambda_handler(event, context):
     """
     Main Lambda handler function for API Gateway (REST / HTTP API) or test invoke.
     """
-    try:
-        _init_cache()
+    with tracer.start_as_current_span("ml_inference.lambda_handler") as span:
+        try:
+            _init_cache()
 
-        # Support test invokes with none/empty event
-        if event is None:
-            event = {}
-
-        # Derive HTTP method & path robustly
-        http_method = (
-            event.get('httpMethod') or
-            event.get('requestContext', {}).get('http', {}).get('method') or
-            'GET'
-        )
-        path = (
-            event.get('path') or
-            event.get('rawPath') or
-            '/'
-        )
-        query_params = event.get('queryStringParameters') or {}
-
-        # CORS preflight
-        if http_method == 'OPTIONS':
-            return {
-                'statusCode': 204,
-                'headers': get_cors_headers(),
-                'body': ''
-            }
-
-        # Simple health endpoint
-        if path in ['/', '/health']:
-            return {
-                'statusCode': 200,
-                'headers': get_cors_headers(),
-                'body': json.dumps({
-                    'status': 'ok',
-                    'cache': 'ready' if cache_available else 'disabled',
-                    'timestamp': datetime.utcnow().isoformat()
-                })
-            }
-        if path.startswith('/recommendations/') and len(path.split('/')) == 3:
-            symbol = path.split('/')[2].upper()
-            return get_recommendation_by_symbol(symbol, query_params)
-
-        if path == '/recommendations':
-            return get_recommendations(query_params)
-
-        return {
-            'statusCode': 404,
-            'headers': get_cors_headers(),
-            'body': json.dumps({'error': 'Not found', 'path': path})
-        }
-
-    except Exception as e:
-        logger.error(f"Error in lambda_handler: {str(e)}")
-        return {
-            'statusCode': 500,
-            'headers': get_cors_headers(),
-            'body': json.dumps({
-                'error': 'Internal server error',
-                'timestamp': datetime.utcnow().isoformat()
+            # Add basic request attributes
+            span.set_attributes({
+                "lambda.function_name": context.function_name,
+                "lambda.request_id": context.aws_request_id,
+                "workflow.type": "ml_model_inference"
             })
-        }
+
+            # Support test invokes with none/empty event
+            if event is None:
+                event = {}
+
+            # Derive HTTP method & path robustly
+            http_method = (
+                event.get('httpMethod') or
+                event.get('requestContext', {}).get('http', {}).get('method') or
+                'GET'
+            )
+            path = (
+                event.get('path') or
+                event.get('rawPath') or
+                '/'
+            )
+            query_params = event.get('queryStringParameters') or {}
+
+            # Add HTTP attributes to span
+            span.set_attributes({
+                "http.method": http_method,
+                "http.path": path,
+                "http.query_params_count": len(query_params)
+            })
+
+            # CORS preflight
+            if http_method == 'OPTIONS':
+                span.set_attribute("http.operation", "preflight")
+                return {
+                    'statusCode': 204,
+                    'headers': get_cors_headers(),
+                    'body': ''
+                }
+
+            # Simple health endpoint
+            if path in ['/', '/health']:
+                span.set_attribute("http.operation", "health_check")
+                return {
+                    'statusCode': 200,
+                    'headers': get_cors_headers(),
+                    'body': json.dumps({
+                        'status': 'ok',
+                        'cache': 'ready' if cache_available else 'disabled',
+                        'timestamp': datetime.utcnow().isoformat()
+                    })
+                }
+
+            if path.startswith('/recommendations/') and len(path.split('/')) == 3:
+                symbol = path.split('/')[2].upper()
+                span.set_attributes({
+                    "http.operation": "get_recommendation_by_symbol",
+                    "finance.symbol": symbol
+                })
+                return get_recommendation_by_symbol(symbol, query_params)
+
+            if path == '/recommendations':
+                span.set_attribute("http.operation", "get_recommendations")
+                return get_recommendations(query_params)
+
+            span.set_attributes({
+                "http.operation": "not_found",
+                "http.status_code": 404
+            })
+            return {
+                'statusCode': 404,
+                'headers': get_cors_headers(),
+                'body': json.dumps({'error': 'Not found', 'path': path})
+            }
+
+        except Exception as e:
+            span.set_attributes({
+                "ml.prediction_success": False,
+                "error.type": type(e).__name__,
+                "error.message": str(e)
+            })
+            span.set_status(Status(StatusCode.ERROR, str(e)))
+            logger.error(f"Error in ML inference handler: {str(e)}")
+            return {
+                'statusCode': 500,
+                'headers': get_cors_headers(),
+                'body': json.dumps({'error': 'Internal server error'})
+            }
 
 def get_from_cache(key):
     """

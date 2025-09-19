@@ -17,6 +17,30 @@ import socket
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# OpenTelemetry imports for business-aware tracing
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+# Enhanced tracing utilities with EventBridge support
+try:
+    from shared.business_tracing import (
+        get_financial_tracer, trace_data_ingestion, propagate_correlation_context
+    )
+    from shared.market_utils import get_market_session, classify_symbol
+    from shared.eventbridge_tracing import (
+        get_eventbridge_integration, trace_eventbridge_handler
+    )
+    BUSINESS_TRACING_AVAILABLE = True
+except ImportError:
+    BUSINESS_TRACING_AVAILABLE = False
+    logger.warning("Business tracing modules not available, using basic tracing")
+
+# Initialize tracer
+if BUSINESS_TRACING_AVAILABLE:
+    financial_tracer = get_financial_tracer("stock_data_ingestion")
+else:
+    tracer = trace.get_tracer(__name__)
+
 # Initialize CloudWatch for custom metrics
 cloudwatch = boto3.client('cloudwatch')
 
@@ -209,11 +233,33 @@ def _internet_reachable():
         logger.error(f"No outbound connectivity: {e}")
         return False
 
+@trace_eventbridge_handler("stock_data_ingestion")
 def lambda_handler(event, context):
+    # Start main span with business context
+    if BUSINESS_TRACING_AVAILABLE:
+        span = financial_tracer.start_financial_span(
+            "data_ingestion.lambda_handler",
+            **{
+                "lambda.function_name": context.function_name,
+                "lambda.request_id": context.aws_request_id,
+                "workflow.type": "data_ingestion"
+            }
+        )
+    else:
+        span = tracer.start_span("data_ingestion.lambda_handler")
+
     try:
         start = time.time()
         logger.info("Starting stock data ingestion process")
         _init_cache()
+
+        # Add market session context
+        if BUSINESS_TRACING_AVAILABLE:
+            market_session = get_market_session()
+            span.set_attributes({
+                "finance.market_session": market_session.value,
+                "finance.is_market_hours": market_session.value == "market_hours"
+            })
 
         if not _internet_reachable():
             return {'statusCode': 502, 'body': json.dumps({'error':'no outbound connectivity','ts':datetime.utcnow().isoformat()})}
@@ -277,17 +323,53 @@ def lambda_handler(event, context):
 
         logger.info(f"Processing {len(idx_symbols)} indexes and {len(stk_symbols)} stocks (Premium: {USE_PREMIUM_API_KEY}, Total universe: {len(POPULAR_STOCKS)} stocks)")
 
+        # Add symbol processing context to span
+        all_symbols = idx_symbols + stk_symbols
+        if BUSINESS_TRACING_AVAILABLE and all_symbols:
+            # Add symbol tier distribution to span
+            tier_counts = {}
+            for symbol in all_symbols:
+                tier = classify_symbol(symbol).value
+                tier_counts[tier] = tier_counts.get(tier, 0) + 1
+
+            span.set_attributes({
+                "data_ingestion.total_symbols": len(all_symbols),
+                "data_ingestion.index_symbols": len(idx_symbols),
+                "data_ingestion.stock_symbols": len(stk_symbols),
+                **{f"data_ingestion.{tier}_symbols": count for tier, count in tier_counts.items()}
+            })
+
         index_data = _process_symbol_list(idx_symbols, category='index')
         stock_data = _process_symbol_list(stk_symbols, category='stock')
 
         if index_data or stock_data:
-            trigger_ml_inference(index_data, stock_data)
+            # Create correlation context for ML inference
+            if BUSINESS_TRACING_AVAILABLE:
+                correlation_context = propagate_correlation_context(
+                    parent_operation="data_ingestion",
+                    symbols=[item['symbol'] for item in (index_data + stock_data)]
+                )
+                trigger_ml_inference(index_data, stock_data, correlation_context)
+            else:
+                trigger_ml_inference(index_data, stock_data)
 
         duration = round(time.time() - start, 2)
         
         # Publish custom metrics for enhanced observability
         publish_ingestion_metrics(len(index_data), len(stock_data), len(idx_symbols) + len(stk_symbols), duration)
-        
+
+        # Add final success attributes to span
+        span.set_attributes({
+            "data_ingestion.indexes_processed": len(index_data),
+            "data_ingestion.stocks_processed": len(stock_data),
+            "data_ingestion.symbols_attempted": len(idx_symbols) + len(stk_symbols),
+            "data_ingestion.duration_sec": duration,
+            "data_ingestion.ml_inference_triggered": bool(index_data or stock_data),
+            "data_ingestion.success": True
+        })
+
+        span.set_status(Status(StatusCode.OK))
+
         return {
             'statusCode': 200,
             'body': json.dumps({
@@ -301,11 +383,20 @@ def lambda_handler(event, context):
             })
         }
     except Exception as e:
+        # Add error attributes to span
+        span.set_attributes({
+            "data_ingestion.success": False,
+            "error.type": type(e).__name__,
+            "error.message": str(e)
+        })
+        span.set_status(Status(StatusCode.ERROR, str(e)))
         logger.error(f"Error in lambda_handler: {e}")
         return {
             'statusCode': 500,
             'body': json.dumps({'error': str(e), 'timestamp': datetime.utcnow().isoformat()})
         }
+    finally:
+        span.end()
 
 def _process_symbol_list(symbols, category):
     results = []
@@ -353,6 +444,7 @@ def fetch_stock_data(symbol):
             'function': 'TIME_SERIES_DAILY',
             'symbol': symbol,
             'outputsize': 'compact',
+            'entitlement': 'delayed',
             'apikey': api_key
         }
         data = http_get_json(url, params)
@@ -449,7 +541,7 @@ def cache_latest_price(symbol, data):
     except Exception as e:
         logger.error(f"DDB cache error {symbol}: {e}")
 
-def trigger_ml_inference(index_data, stock_data):
+def trigger_ml_inference(index_data, stock_data, correlation_context=None):
     try:
         lambda_client = boto3.client('lambda')
         payload = {
@@ -458,6 +550,10 @@ def trigger_ml_inference(index_data, stock_data):
             'stock_data': json.loads(json.dumps(stock_data, default=decimal_default)),
             'timestamp': datetime.utcnow().isoformat()
         }
+
+        # Add correlation context if available
+        if correlation_context:
+            payload.update(correlation_context)
         
         # Trigger existing ML inference (recommendations)
         lambda_client.invoke(

@@ -1,0 +1,434 @@
+# CloudWatch to SigNoz Log Forwarding
+# This creates a Lambda function that forwards CloudWatch logs to SigNoz
+
+# Lambda function for CloudWatch to SigNoz log forwarding
+data "archive_file" "cloudwatch_signoz_forwarder" {
+  type        = "zip"
+  source_file = "${path.module}/../lambda_functions/cloudwatch_signoz_forwarder.py"
+  output_path = "${path.module}/cloudwatch_signoz_forwarder.zip"
+}
+
+resource "aws_lambda_function" "cloudwatch_signoz_forwarder" {
+  count            = var.enable_signoz_integration ? 1 : 0
+  filename         = data.archive_file.cloudwatch_signoz_forwarder.output_path
+  source_code_hash = data.archive_file.cloudwatch_signoz_forwarder.output_base64sha256
+  function_name    = "cloudwatch-signoz-forwarder"
+  role             = aws_iam_role.cloudwatch_forwarder_role[0].arn
+  handler          = "cloudwatch_signoz_forwarder.lambda_handler"
+  runtime          = "python3.11"
+  timeout          = 60
+  memory_size      = 256
+
+  environment {
+    variables = {
+      SIGNOZ_ENDPOINT = var.signoz_otlp_endpoint
+      SIGNOZ_TOKEN    = var.signoz_ingestion_key
+      LOG_LEVEL       = "INFO"
+    }
+  }
+
+  tags = merge(
+    {
+      Name = "cloudwatch-signoz-forwarder"
+      Service = "observability"
+      Purpose = "log-forwarding"
+    },
+    var.additional_tags
+  )
+}
+
+# IAM role for the log forwarder Lambda
+resource "aws_iam_role" "cloudwatch_forwarder_role" {
+  count = var.enable_signoz_integration ? 1 : 0
+  name  = "cloudwatch-signoz-forwarder-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    {
+      Name = "cloudwatch-signoz-forwarder-role"
+      Service = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# IAM policy for the log forwarder
+resource "aws_iam_role_policy" "cloudwatch_forwarder_policy" {
+  count = var.enable_signoz_integration ? 1 : 0
+  name  = "cloudwatch-signoz-forwarder-policy"
+  role  = aws_iam_role.cloudwatch_forwarder_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# CloudWatch Log Group subscription filters for AWS services
+resource "aws_cloudwatch_log_subscription_filter" "api_gateway_access_logs_to_signoz" {
+  count           = var.enable_signoz_integration ? 1 : 0
+  name            = "api-gateway-access-logs-to-signoz"
+  log_group_name  = aws_cloudwatch_log_group.api_gateway_access_logs.name
+  filter_pattern  = ""
+  destination_arn = aws_lambda_function.cloudwatch_signoz_forwarder[0].arn
+
+  depends_on = [aws_lambda_permission.allow_cloudwatch_api_access[0]]
+}
+
+resource "aws_cloudwatch_log_subscription_filter" "api_gateway_execution_logs_to_signoz" {
+  count           = var.enable_signoz_integration ? 1 : 0
+  name            = "api-gateway-execution-logs-to-signoz"
+  log_group_name  = aws_cloudwatch_log_group.api_gateway_execution_logs.name
+  filter_pattern  = ""
+  destination_arn = aws_lambda_function.cloudwatch_signoz_forwarder[0].arn
+
+  depends_on = [aws_lambda_permission.allow_cloudwatch_api_execution[0]]
+}
+
+# Lambda permissions for CloudWatch Logs to invoke the forwarder function
+resource "aws_lambda_permission" "allow_cloudwatch_api_access" {
+  count         = var.enable_signoz_integration ? 1 : 0
+  statement_id  = "AllowExecutionFromCloudWatchLogsAPIAccess"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cloudwatch_signoz_forwarder[0].function_name
+  principal     = "logs.amazonaws.com"
+  source_arn    = "${aws_cloudwatch_log_group.api_gateway_access_logs.arn}:*"
+}
+
+resource "aws_lambda_permission" "allow_cloudwatch_api_execution" {
+  count         = var.enable_signoz_integration ? 1 : 0
+  statement_id  = "AllowExecutionFromCloudWatchLogsAPIExecution"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cloudwatch_signoz_forwarder[0].function_name
+  principal     = "logs.amazonaws.com"
+  source_arn    = "${aws_cloudwatch_log_group.api_gateway_execution_logs.arn}:*"
+}
+
+# Forward existing Lambda logs to SigNoz as well
+resource "aws_cloudwatch_log_subscription_filter" "lambda_logs_to_signoz" {
+  for_each = var.enable_signoz_integration ? toset([
+    "/aws/lambda/stock-data-ingestion",
+    "/aws/lambda/ml-model-inference-lowcost",
+    "/aws/lambda/stock-recommendations-api",
+    "/aws/lambda/dual-accuracy-tracker",
+    "/aws/lambda/dual-prediction-reporting-api"
+  ]) : toset([])
+
+  name            = "lambda-logs-to-signoz-${replace(each.value, "/", "-")}"
+  log_group_name  = each.value
+  filter_pattern  = ""
+  destination_arn = aws_lambda_function.cloudwatch_signoz_forwarder[0].arn
+
+  depends_on = [aws_lambda_permission.allow_cloudwatch_lambda_logs]
+}
+
+resource "aws_lambda_permission" "allow_cloudwatch_lambda_logs" {
+  for_each = var.enable_signoz_integration ? toset([
+    "/aws/lambda/stock-data-ingestion",
+    "/aws/lambda/ml-model-inference-lowcost",
+    "/aws/lambda/stock-recommendations-api",
+    "/aws/lambda/dual-accuracy-tracker",
+    "/aws/lambda/dual-prediction-reporting-api"
+  ]) : toset([])
+
+  statement_id  = "AllowExecutionFromCloudWatchLogs${replace(each.value, "/", "")}"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.cloudwatch_signoz_forwarder[0].function_name
+  principal     = "logs.amazonaws.com"
+  source_arn    = "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:${each.value}:*"
+}
+
+# X-Ray service map integration
+resource "aws_xray_sampling_rule" "stock_analytics_sampling" {
+  count = var.enable_signoz_integration ? 1 : 0
+
+  rule_name      = "stock-analytics-sampling"
+  priority       = 9000
+  version        = 1
+  reservoir_size = 1
+  fixed_rate     = 0.1
+  url_path       = "*"
+  host           = "*"
+  http_method    = "*"
+  service_type   = "*"
+  service_name   = "*"
+  resource_arn   = "*"
+
+  tags = merge(
+    {
+      Name = "stock-analytics-sampling"
+      Service = "xray"
+    },
+    var.additional_tags
+  )
+}
+
+# Enable X-Ray encryption (optional)
+resource "aws_xray_encryption_config" "stock_analytics_xray_encryption" {
+  count = var.enable_signoz_integration ? 1 : 0
+  type  = "NONE"  # Can be "KMS" for encryption
+}
+
+# CloudWatch Metric Stream to SigNoz (using Kinesis Data Firehose)
+# Simplified version without HTTP endpoint for now
+resource "aws_kinesis_firehose_delivery_stream" "cloudwatch_metrics_to_signoz" {
+  count       = var.enable_signoz_integration ? 1 : 0
+  name        = "cloudwatch-metrics-to-signoz"
+  destination = "s3"
+
+  s3_configuration {
+    role_arn           = aws_iam_role.firehose_delivery_role[0].arn
+    bucket_arn         = aws_s3_bucket.observability_backup[0].arn
+    prefix             = "metrics-backup/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
+    error_output_prefix = "errors/"
+    buffer_size        = 5
+    buffer_interval    = 300
+    compression_format = "GZIP"
+
+    cloudwatch_logging_options {
+      enabled         = true
+      log_group_name  = aws_cloudwatch_log_group.firehose_logs[0].name
+      log_stream_name = "s3-backup"
+    }
+  }
+
+  tags = merge(
+    {
+      Name = "cloudwatch-metrics-to-signoz"
+      Service = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# S3 bucket for Firehose backup
+resource "aws_s3_bucket" "observability_backup" {
+  count  = var.enable_signoz_integration ? 1 : 0
+  bucket = "stock-analytics-observability-backup-${random_id.bucket_suffix.hex}"
+
+  tags = merge(
+    {
+      Name = "observability-backup"
+      Service = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "observability_backup_lifecycle" {
+  count  = var.enable_signoz_integration ? 1 : 0
+  bucket = aws_s3_bucket.observability_backup[0].id
+
+  rule {
+    id     = "observability_backup_lifecycle"
+    status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
+
+    expiration {
+      days = 30  # Delete backup data after 30 days
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+  }
+}
+
+# Firehose delivery role
+resource "aws_iam_role" "firehose_delivery_role" {
+  count = var.enable_signoz_integration ? 1 : 0
+  name  = "firehose-delivery-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "firehose.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    {
+      Name = "firehose-delivery-role"
+      Service = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_iam_role_policy" "firehose_delivery_policy" {
+  count = var.enable_signoz_integration ? 1 : 0
+  name  = "firehose-delivery-policy"
+  role  = aws_iam_role.firehose_delivery_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:AbortMultipartUpload",
+          "s3:GetBucketLocation",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:ListBucketMultipartUploads",
+          "s3:PutObject"
+        ]
+        Resource = [
+          aws_s3_bucket.observability_backup[0].arn,
+          "${aws_s3_bucket.observability_backup[0].arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+# CloudWatch Log Group for Firehose
+resource "aws_cloudwatch_log_group" "firehose_logs" {
+  count             = var.enable_signoz_integration ? 1 : 0
+  name              = "/aws/kinesisfirehose/cloudwatch-metrics-to-signoz"
+  retention_in_days = 7
+
+  tags = merge(
+    {
+      Name = "firehose-logs"
+      Service = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# CloudWatch Metric Stream
+resource "aws_cloudwatch_metric_stream" "signoz_metric_stream" {
+  count       = var.enable_signoz_integration ? 1 : 0
+  name        = "signoz-metric-stream"
+  firehose_arn = aws_kinesis_firehose_delivery_stream.cloudwatch_metrics_to_signoz[0].arn
+  role_arn     = aws_iam_role.metric_stream_role[0].arn
+  output_format = "opentelemetry0.7"
+
+  include_filter {
+    namespace = "AWS/ApiGateway"
+  }
+
+  include_filter {
+    namespace = "AWS/Lambda"
+  }
+
+  include_filter {
+    namespace = "AWS/RDS"
+  }
+
+  include_filter {
+    namespace = "AWS/ElastiCache"
+  }
+
+  include_filter {
+    namespace = "AWS/SNS"
+  }
+
+  include_filter {
+    namespace = "AWS/X-Ray"
+  }
+
+  tags = merge(
+    {
+      Name = "signoz-metric-stream"
+      Service = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+# IAM role for CloudWatch Metric Stream
+resource "aws_iam_role" "metric_stream_role" {
+  count = var.enable_signoz_integration ? 1 : 0
+  name  = "metric-stream-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "streams.metrics.cloudwatch.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    {
+      Name = "metric-stream-role"
+      Service = "observability"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_iam_role_policy" "metric_stream_policy" {
+  count = var.enable_signoz_integration ? 1 : 0
+  name  = "metric-stream-policy"
+  role  = aws_iam_role.metric_stream_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "firehose:PutRecord",
+          "firehose:PutRecordBatch"
+        ]
+        Resource = aws_kinesis_firehose_delivery_stream.cloudwatch_metrics_to_signoz[0].arn
+      }
+    ]
+  })
+}

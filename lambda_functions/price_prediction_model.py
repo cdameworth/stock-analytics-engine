@@ -11,6 +11,20 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from decimal import Decimal
 
+# OpenTelemetry imports for custom tracing
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+
+# Business-aware tracing utilities
+try:
+    from shared.business_tracing import (
+        get_financial_tracer, extract_correlation_context, enhance_span_with_correlation
+    )
+    from shared.market_utils import get_financial_attributes
+    BUSINESS_TRACING_AVAILABLE = True
+except ImportError:
+    BUSINESS_TRACING_AVAILABLE = False
+
 # Import shared utilities
 from shared.lambda_utils import (
     setup_logger, LambdaResponse, handle_lambda_errors,
@@ -21,6 +35,12 @@ from shared.config import get_config, FeatureFlags
 # Configure logging
 logger = setup_logger(__name__)
 config = get_config()
+
+# Initialize tracer
+if BUSINESS_TRACING_AVAILABLE:
+    financial_tracer = get_financial_tracer("price_prediction_model")
+else:
+    tracer = trace.get_tracer(__name__)
 
 # AWS clients (using centralized client management)
 dynamodb = AWSClients.get_resource('dynamodb')
@@ -53,36 +73,91 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "factors": ["strong_earnings", "sector_rotation"]
     }
     """
-    logger.info(f"Price prediction request: {json.dumps(event, default=str)}")
+    # Start span with business context
+    if BUSINESS_TRACING_AVAILABLE:
+        span = financial_tracer.start_financial_span("price_prediction.lambda_handler")
+    else:
+        span = tracer.start_span("price_prediction.lambda_handler")
 
-    # Check if this is a batch request from EventBridge or data ingestion
-    if event.get('trigger_type') in ['scheduled', 'data_ingestion'] and 'symbols' in event:
-        return handle_batch_predictions(event, context)
+    try:
+        logger.info(f"Price prediction request: {json.dumps(event, default=str)}")
 
-    # Parse and validate input for single symbol
-    prediction_input = parse_prediction_input(event)
+        # Add basic request attributes
+        trigger_type = event.get('trigger_type', 'unknown')
+        span.set_attributes({
+            "lambda.function_name": context.function_name,
+            "lambda.request_id": context.aws_request_id,
+            "workflow.trigger_type": trigger_type,
+            "workflow.type": "price_prediction"
+        })
 
-    # Generate price prediction
-    prediction_result = generate_price_prediction(
-        prediction_input['symbol'],
-        prediction_input['current_price'],
-        prediction_input['timeframe_days'],
-        prediction_input['technical_indicators']
-    )
+        # Extract and apply correlation context if available
+        if BUSINESS_TRACING_AVAILABLE:
+            correlation_context = extract_correlation_context(event)
+            if correlation_context:
+                enhance_span_with_correlation(span, correlation_context)
 
-    # Store prediction for accuracy tracking
-    store_price_prediction(
-        prediction_input['symbol'],
-        prediction_input['current_price'],
-        prediction_result,
-        prediction_input['timeframe_days']
-    )
+        # Check if this is a batch request from EventBridge or data ingestion
+        if event.get('trigger_type') in ['scheduled', 'data_ingestion'] and 'symbols' in event:
+            span.set_attribute("workflow.batch_mode", True)
+            span.set_attribute("workflow.symbol_count", len(event.get('symbols', [])))
+            return handle_batch_predictions(event, context)
 
-    # Send metrics to CloudWatch
-    if FeatureFlags.is_metrics_enabled():
-        send_prediction_metrics(prediction_input['symbol'], prediction_result)
+        # Parse and validate input for single symbol
+        prediction_input = parse_prediction_input(event)
+        symbol = prediction_input['symbol']
+        current_price = prediction_input['current_price']
 
-    return LambdaResponse.success(prediction_result)
+        # Add financial attributes to the span
+        span.set_attributes({
+            "finance.symbol": symbol,
+            "finance.current_price": current_price,
+            "finance.timeframe_days": prediction_input['timeframe_days'],
+            "workflow.batch_mode": False
+        })
+
+        # Generate price prediction
+        prediction_result = generate_price_prediction(
+            symbol,
+            current_price,
+            prediction_input['timeframe_days'],
+            prediction_input['technical_indicators']
+        )
+
+        # Add prediction results to the span
+        span.set_attributes({
+            "finance.target_price": prediction_result.get('target_price', 0),
+            "finance.recommendation": prediction_result.get('recommendation', 'unknown'),
+            "finance.confidence_score": prediction_result.get('confidence', 0),
+            "ml.prediction_generated": True
+        })
+
+        # Store prediction for accuracy tracking
+        store_price_prediction(
+            symbol,
+            current_price,
+            prediction_result,
+            prediction_input['timeframe_days']
+        )
+
+        # Send metrics to CloudWatch
+        if FeatureFlags.is_metrics_enabled():
+            send_prediction_metrics(symbol, prediction_result)
+
+        span.set_status(Status(StatusCode.OK))
+        return LambdaResponse.success(prediction_result)
+
+    except Exception as e:
+        span.set_attributes({
+            "prediction.success": False,
+            "error.type": type(e).__name__,
+            "error.message": str(e)
+        })
+        span.set_status(Status(StatusCode.ERROR, str(e)))
+        logger.error(f"Error in price prediction handler: {e}")
+        raise
+    finally:
+        span.end()
 
 
 def parse_prediction_input(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -117,91 +192,127 @@ def parse_prediction_input(event: Dict[str, Any]) -> Dict[str, Any]:
         'technical_indicators': technical_indicators or {}
     }
 
-def generate_price_prediction(symbol: str, current_price: float, timeframe_days: int, 
+def generate_price_prediction(symbol: str, current_price: float, timeframe_days: int,
                             technical_indicators: Dict) -> Dict:
     """
     Generate price target prediction using technical and fundamental analysis
     """
-    try:
-        # Extract technical indicators
-        rsi = technical_indicators.get('rsi', 50)
-        macd = technical_indicators.get('macd', 0)
-        bollinger_position = technical_indicators.get('bollinger_position', 0.5)
-        volume_ratio = technical_indicators.get('volume_ratio', 1.0)
+    with tracer.start_as_current_span("ml.price_prediction_algorithm") as span:
+        # Add ML-specific attributes
+        span.set_attributes({
+            "ml.algorithm": "technical_fundamental_hybrid",
+            "ml.input.symbol": symbol,
+            "ml.input.current_price": current_price,
+            "ml.input.timeframe_days": timeframe_days,
+            "ml.input.indicators_count": len(technical_indicators)
+        })
+
+        try:
+            # Extract technical indicators
+            rsi = technical_indicators.get('rsi', 50)
+            macd = technical_indicators.get('macd', 0)
+            bollinger_position = technical_indicators.get('bollinger_position', 0.5)
+            volume_ratio = technical_indicators.get('volume_ratio', 1.0)
+
+            # Add technical indicator attributes
+            span.set_attributes({
+                "ml.input.rsi": rsi,
+                "ml.input.macd": macd,
+                "ml.input.bollinger_position": bollinger_position,
+                "ml.input.volume_ratio": volume_ratio
+            })
+
+            # Fundamental factors (simplified)
+            sector_strength = get_sector_strength(symbol)
+            market_trend = get_market_trend()
+            volatility = calculate_volatility(symbol)
+
+            # Price prediction algorithm
+            base_trend = calculate_base_trend(rsi, macd, bollinger_position)
+            sector_adjustment = sector_strength * 0.02  # ±2% sector impact
+            market_adjustment = market_trend * 0.015    # ±1.5% market impact
+            volume_impact = min((volume_ratio - 1.0) * 0.01, 0.03)  # Volume boost up to 3%
+
+            # Calculate total expected return
+            total_expected_return = base_trend + sector_adjustment + market_adjustment + volume_impact
+
+            # Apply timeframe scaling
+            timeframe_multiplier = math.sqrt(timeframe_days / 30.0)  # Scale for timeframe
+            adjusted_return = total_expected_return * timeframe_multiplier
+
+            # Calculate target price
+            target_price = current_price * (1 + adjusted_return)
+
+            # Determine recommendation
+            if adjusted_return > 0.05:  # >5% expected return
+                recommendation = "buy"
+            elif adjusted_return < -0.05:  # <-5% expected return
+                recommendation = "sell"
+            else:
+                recommendation = "hold"
+
+            # Calculate confidence based on signal strength
+            signal_strength = abs(adjusted_return)
+            confidence = min(0.5 + (signal_strength * 2), 0.95)  # 50-95% confidence range
+
+            # Price range estimation (±volatility)
+            price_range_pct = volatility * 0.5  # Half of volatility as range
+            price_low = target_price * (1 - price_range_pct)
+            price_high = target_price * (1 + price_range_pct)
+
+            # Key factors driving prediction
+            factors = []
+            if abs(rsi - 50) > 20:
+                factors.append("rsi_signal" if rsi < 30 else "rsi_overbought" if rsi > 70 else "rsi_neutral")
+            if abs(macd) > 0.5:
+                factors.append("macd_bullish" if macd > 0 else "macd_bearish")
+            if sector_strength > 0.02:
+                factors.append("sector_strength")
+            elif sector_strength < -0.02:
+                factors.append("sector_weakness")
+            if volume_ratio > 1.5:
+                factors.append("high_volume")
         
-        # Fundamental factors (simplified)
-        sector_strength = get_sector_strength(symbol)
-        market_trend = get_market_trend()
-        volatility = calculate_volatility(symbol)
-        
-        # Price prediction algorithm
-        base_trend = calculate_base_trend(rsi, macd, bollinger_position)
-        sector_adjustment = sector_strength * 0.02  # ±2% sector impact
-        market_adjustment = market_trend * 0.015    # ±1.5% market impact
-        volume_impact = min((volume_ratio - 1.0) * 0.01, 0.03)  # Volume boost up to 3%
-        
-        # Calculate total expected return
-        total_expected_return = base_trend + sector_adjustment + market_adjustment + volume_impact
-        
-        # Apply timeframe scaling
-        timeframe_multiplier = math.sqrt(timeframe_days / 30.0)  # Scale for timeframe
-        adjusted_return = total_expected_return * timeframe_multiplier
-        
-        # Calculate target price
-        target_price = current_price * (1 + adjusted_return)
-        
-        # Determine recommendation
-        if adjusted_return > 0.05:  # >5% expected return
-            recommendation = "buy"
-        elif adjusted_return < -0.05:  # <-5% expected return
-            recommendation = "sell"
-        else:
-            recommendation = "hold"
-        
-        # Calculate confidence based on signal strength
-        signal_strength = abs(adjusted_return)
-        confidence = min(0.5 + (signal_strength * 2), 0.95)  # 50-95% confidence range
-        
-        # Price range estimation (±volatility)
-        price_range_pct = volatility * 0.5  # Half of volatility as range
-        price_low = target_price * (1 - price_range_pct)
-        price_high = target_price * (1 + price_range_pct)
-        
-        # Key factors driving prediction
-        factors = []
-        if abs(rsi - 50) > 20:
-            factors.append("rsi_signal" if rsi < 30 else "rsi_overbought" if rsi > 70 else "rsi_neutral")
-        if abs(macd) > 0.5:
-            factors.append("macd_bullish" if macd > 0 else "macd_bearish")
-        if sector_strength > 0.02:
-            factors.append("sector_strength")
-        elif sector_strength < -0.02:
-            factors.append("sector_weakness")
-        if volume_ratio > 1.5:
-            factors.append("high_volume")
-        
-        prediction_result = {
-            'symbol': symbol,
-            'target_price': round(target_price, 2),
-            'recommendation': recommendation,
-            'confidence': round(confidence, 2),
-            'expected_return': round(adjusted_return * 100, 2),  # As percentage
-            'price_range': {
-                'low': round(price_low, 2),
-                'high': round(price_high, 2)
-            },
-            'factors': factors,
-            'timeframe_days': timeframe_days,
-            'prediction_timestamp': datetime.utcnow().isoformat(),
-            'model_version': 'price_v1.0'
-        }
-        
-        logger.info(f"Price prediction generated for {symbol}: {prediction_result}")
-        return prediction_result
-        
-    except Exception as e:
-        logger.error(f"Error generating price prediction: {str(e)}")
-        raise e
+            prediction_result = {
+                'symbol': symbol,
+                'target_price': round(target_price, 2),
+                'recommendation': recommendation,
+                'confidence': round(confidence, 2),
+                'expected_return': round(adjusted_return * 100, 2),  # As percentage
+                'price_range': {
+                    'low': round(price_low, 2),
+                    'high': round(price_high, 2)
+                },
+                'factors': factors,
+                'timeframe_days': timeframe_days,
+                'prediction_timestamp': datetime.utcnow().isoformat(),
+                'model_version': 'price_v1.0'
+            }
+
+            # Add prediction output attributes
+            span.set_attributes({
+                "ml.output.target_price": target_price,
+                "ml.output.recommendation": recommendation,
+                "ml.output.confidence_score": confidence,
+                "ml.output.expected_return_pct": adjusted_return * 100,
+                "ml.output.factors_count": len(factors),
+                "ml.model_version": "price_v1.0",
+                "ml.prediction_success": True
+            })
+
+            logger.info(f"Price prediction generated for {symbol}: {prediction_result}")
+            span.set_status(Status(StatusCode.OK))
+            return prediction_result
+
+        except Exception as e:
+            span.set_attributes({
+                "ml.prediction_success": False,
+                "error.type": type(e).__name__,
+                "error.message": str(e)
+            })
+            span.set_status(Status(StatusCode.ERROR, str(e)))
+            logger.error(f"Error in price prediction for {symbol}: {e}")
+            raise
 
 def calculate_base_trend(rsi: float, macd: float, bollinger_position: float) -> float:
     """Calculate base trend from technical indicators"""

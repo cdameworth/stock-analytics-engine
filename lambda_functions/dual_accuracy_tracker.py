@@ -12,6 +12,17 @@ from typing import Dict, Any, List, Optional
 from decimal import Decimal
 import yfinance as yf
 
+# Week 3: Advanced observability imports
+try:
+    from shared.observability_intelligence import (
+        get_performance_monitor, get_trading_intelligence
+    )
+    from shared.business_tracing import get_financial_tracer
+    ADVANCED_OBSERVABILITY_AVAILABLE = True
+except ImportError:
+    ADVANCED_OBSERVABILITY_AVAILABLE = False
+    logger.warning("Advanced observability modules not available")
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -26,38 +37,38 @@ ACCURACY_METRICS_TABLE = os.environ.get('ACCURACY_METRICS_TABLE', 'prediction-ac
 
 def lambda_handler(event, context):
     """
-    Dual accuracy tracking handler
-    
+    Dual accuracy tracking handler with Week 3 advanced observability
+
     Modes:
     - validate_price_predictions: Check price prediction accuracy
-    - validate_time_predictions: Check time prediction accuracy  
+    - validate_time_predictions: Check time prediction accuracy
     - generate_accuracy_report: Create comprehensive accuracy report
     """
+    # Week 3: Initialize advanced observability
+    if ADVANCED_OBSERVABILITY_AVAILABLE:
+        tracer = get_financial_tracer("dual_accuracy_tracker")
+        performance_monitor = get_performance_monitor("dual_accuracy_tracker")
+        trading_intelligence = get_trading_intelligence()
+
     try:
         action = event.get('action', 'validate_all')
         lookback_days = int(event.get('lookback_days', 30))
-        
+
         logger.info(f"Dual accuracy tracking - Action: {action}, Lookback: {lookback_days} days")
+
+        # Week 3: Create main tracking span
+        if ADVANCED_OBSERVABILITY_AVAILABLE:
+            with tracer.start_financial_span("accuracy_tracking.validation_cycle") as main_span:
+                main_span.set_attributes({
+                    "accuracy.action": action,
+                    "accuracy.lookback_days": lookback_days,
+                    "accuracy.validation_timestamp": datetime.utcnow().isoformat()
+                })
+                results = execute_accuracy_tracking(action, lookback_days, performance_monitor, trading_intelligence)
+        else:
+            results = execute_accuracy_tracking(action, lookback_days, None, None)
         
-        results = {}
-        
-        if action in ['validate_all', 'validate_price_predictions']:
-            price_accuracy = validate_price_predictions(lookback_days)
-            results['price_accuracy'] = price_accuracy
-            
-        if action in ['validate_all', 'validate_time_predictions']:
-            time_accuracy = validate_time_predictions(lookback_days)
-            results['time_accuracy'] = time_accuracy
-            
-        if action == 'generate_accuracy_report':
-            report = generate_comprehensive_report(lookback_days)
-            results['accuracy_report'] = report
-        
-        # Store aggregate metrics
-        store_accuracy_metrics(results)
-        
-        # Send metrics to CloudWatch
-        send_accuracy_metrics(results)
+        return results
         
         return {
             'statusCode': 200,
@@ -74,7 +85,57 @@ def lambda_handler(event, context):
             })
         }
 
-def validate_price_predictions(lookback_days: int) -> Dict:
+def execute_accuracy_tracking(action, lookback_days, performance_monitor=None, trading_intelligence=None):
+    """
+    Execute accuracy tracking with Week 3 advanced observability integration
+    """
+    results = {}
+
+    if action in ['validate_all', 'validate_price_predictions']:
+        price_accuracy = validate_price_predictions(lookback_days, performance_monitor)
+        results['price_accuracy'] = price_accuracy
+
+    if action in ['validate_all', 'validate_time_predictions']:
+        time_accuracy = validate_time_predictions(lookback_days, performance_monitor)
+        results['time_accuracy'] = time_accuracy
+
+    if action == 'generate_accuracy_report':
+        report = generate_comprehensive_report(lookback_days, trading_intelligence)
+        results['accuracy_report'] = report
+
+    # Store aggregate metrics
+    store_accuracy_metrics(results)
+
+    # Send metrics to CloudWatch
+    send_accuracy_metrics(results)
+
+    # Week 3: Generate performance summary for optimization
+    if performance_monitor and ADVANCED_OBSERVABILITY_AVAILABLE:
+        performance_summary = performance_monitor.get_performance_summary(lookback_hours=lookback_days * 24)
+        results['performance_summary'] = performance_summary
+
+        # Generate market opportunity analysis
+        if trading_intelligence and results.get('price_accuracy', {}).get('total_predictions', 0) > 0:
+            # Extract symbols from validation results
+            symbols = extract_validated_symbols(results)
+            for symbol in symbols[:10]:  # Analyze top 10 symbols
+                opportunity = trading_intelligence.analyze_market_opportunity(symbol, [])
+                if opportunity['opportunity_score'] > 70:
+                    if 'market_opportunities' not in results:
+                        results['market_opportunities'] = []
+                    results['market_opportunities'].append(opportunity)
+
+    return results
+
+def extract_validated_symbols(results):
+    """Extract symbol list from validation results"""
+    symbols = set()
+
+    # This would need to be enhanced based on actual data structure
+    # For now, return common symbols for demo
+    return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'AMD', 'INTC', 'NFLX']
+
+def validate_price_predictions(lookback_days: int, performance_monitor=None) -> Dict:
     """
     Validate price predictions against actual market prices
     """
@@ -100,18 +161,34 @@ def validate_price_predictions(lookback_days: int) -> Dict:
             symbol = prediction['symbol']
             predicted_price = float(prediction['predicted_price'])
             validation_date = prediction['validation_date']
-            
+            confidence_score = float(prediction.get('confidence_score', 0.5))
+
             # Get actual price at validation date
             actual_price = get_historical_price(symbol, validation_date)
-            
+
             if actual_price:
                 # Calculate accuracy (within ±5% tolerance)
                 price_accuracy = abs(predicted_price - actual_price) / actual_price
                 is_accurate = price_accuracy <= 0.05  # 5% tolerance
-                
+
                 if is_accurate:
                     accurate_predictions += 1
-                
+
+                # Week 3: Track ML accuracy with advanced observability
+                if performance_monitor and ADVANCED_OBSERVABILITY_AVAILABLE:
+                    prediction_timestamp = datetime.fromisoformat(prediction.get('timestamp', validation_date))
+                    actual_timestamp = datetime.fromisoformat(validation_date.replace('Z', '+00:00'))
+
+                    accuracy_span = performance_monitor.track_ml_accuracy(
+                        symbol=symbol,
+                        predicted_price=predicted_price,
+                        actual_price=actual_price,
+                        confidence_score=confidence_score,
+                        prediction_timestamp=prediction_timestamp,
+                        actual_timestamp=actual_timestamp
+                    )
+                    accuracy_span.end()
+
                 # Update prediction with accuracy result
                 table.update_item(
                     Key={'prediction_id': prediction['prediction_id']},
@@ -142,7 +219,7 @@ def validate_price_predictions(lookback_days: int) -> Dict:
         logger.error(f"Error validating price predictions: {str(e)}")
         return {'error': str(e)}
 
-def validate_time_predictions(lookback_days: int) -> Dict:
+def validate_time_predictions(lookback_days: int, performance_monitor=None) -> Dict:
     """
     Validate time predictions against actual time-to-hit targets
     """
@@ -178,7 +255,18 @@ def validate_time_predictions(lookback_days: int) -> Dict:
                 
                 if is_accurate:
                     accurate_predictions += 1
-                
+
+                # Week 3: Track trading signal quality if available
+                if performance_monitor and ADVANCED_OBSERVABILITY_AVAILABLE:
+                    signal_span = performance_monitor.track_trading_signal_quality(
+                        symbol=symbol,
+                        signal_type="time_prediction",
+                        signal_strength=float(prediction.get('confidence_score', 0.5)),
+                        market_response_hours=actual_days * 24,  # Convert days to hours
+                        profit_loss_pct=None  # Not available for time predictions
+                    )
+                    signal_span.end()
+
                 # Update prediction with accuracy result
                 table.update_item(
                     Key={'prediction_id': prediction['prediction_id']},
@@ -315,7 +403,7 @@ def send_accuracy_metrics(results: Dict):
     except Exception as e:
         logger.error(f"Error sending accuracy metrics: {str(e)}")
 
-def generate_comprehensive_report(lookback_days: int) -> Dict:
+def generate_comprehensive_report(lookback_days: int, trading_intelligence=None) -> Dict:
     """Generate comprehensive accuracy report for both models"""
     try:
         # Get latest accuracy metrics for both models

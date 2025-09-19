@@ -214,6 +214,12 @@ resource "aws_iam_role_policy_attachment" "lambda_secrets_access_attach_premium"
   policy_arn = aws_iam_policy.lambda_secrets_access_premium.arn
 }
 
+# Add X-Ray write permissions for Lambda execution role
+resource "aws_iam_role_policy_attachment" "lambda_xray_write_only" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
 resource "aws_iam_role" "sagemaker_execution_role" {
   name               = "sagemaker-execution-role"
   assume_role_policy = data.aws_iam_policy_document.sagemaker_assume_role.json
@@ -547,7 +553,7 @@ resource "aws_lambda_function" "ml_model_inference" {
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
 
-  layers = var.enable_signoz_integration ? [local.otel_layer_arn] : []
+  layers = local.common_otel_layers
 
   environment {
     variables = merge(
@@ -562,10 +568,7 @@ resource "aws_lambda_function" "ml_model_inference" {
         PREMIUM_API_CALLS_PER_MINUTE     = var.premium_api_calls_per_minute
         USE_PREMIUM_API_KEY              = var.use_premium_api_key
       },
-      local.otel_base_config,
-      var.enable_signoz_integration ? {
-        OTEL_SERVICE_NAME = "ml-model-inference"
-      } : {}
+      var.enable_signoz_integration ? local.get_lambda_environment.ml_model_inference : {}
     )
   }
 
@@ -580,6 +583,7 @@ resource "aws_lambda_function" "ml_model_inference" {
 
   architectures = var.enable_graviton_instances ? ["arm64"] : ["x86_64"]
 
+  # Enable X-Ray tracing for distributed tracing
   tracing_config {
     mode = "Active"
   }
@@ -619,7 +623,12 @@ resource "aws_lambda_function" "stock_data_ingestion" {
 
   layers = concat([
     "arn:aws:lambda:us-east-1:791060928878:layer:valkey-redis-py311:1"
-  ], var.enable_signoz_integration ? [local.otel_layer_arn] : [])
+  ], local.common_otel_layers)
+
+  # Enable X-Ray tracing for distributed tracing
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = merge(
@@ -635,10 +644,7 @@ resource "aws_lambda_function" "stock_data_ingestion" {
         USE_PREMIUM_API_KEY              = var.use_premium_api_key
         COMPREHENSIVE_STOCK_COVERAGE     = var.use_premium_api_key ? "true" : "false"
       },
-      local.otel_base_config,
-      var.enable_signoz_integration ? {
-        OTEL_SERVICE_NAME = "stock-data-ingestion"
-      } : {}
+      var.enable_signoz_integration ? local.complete_tracing_environment.stock_data_ingestion : {}
     )
   }
 
@@ -678,7 +684,7 @@ resource "aws_lambda_function" "stock_recommendations_api" {
 
   layers = concat([
     "arn:aws:lambda:us-east-1:791060928878:layer:valkey-redis-py311:1"
-  ], var.enable_signoz_integration ? [local.otel_layer_arn] : [])
+  ], local.common_otel_layers)
 
   environment {
     variables = merge(
@@ -689,10 +695,7 @@ resource "aws_lambda_function" "stock_recommendations_api" {
         RECOMMENDATION_TTL_HOURS      = var.recommendation_ttl_hours
         RECOMMENDATION_MAX_AGE_HOURS  = var.recommendation_max_age_hours
       },
-      local.otel_base_config,
-      var.enable_signoz_integration ? {
-        OTEL_SERVICE_NAME = "stock-recommendations-api"
-      } : {}
+      var.enable_signoz_integration ? local.get_lambda_environment.stock_recommendations_api : {}
     )
   }
 
@@ -1388,6 +1391,9 @@ resource "aws_api_gateway_stage" "stock_recommendations_api_stage" {
   deployment_id = aws_api_gateway_deployment.stock_recommendations_api_deployment.id
   rest_api_id   = aws_api_gateway_rest_api.stock_recommendations_api.id
   stage_name    = "prod"
+
+  # Enable X-Ray tracing for API Gateway
+  xray_tracing_enabled = true
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway_logs_lowcost.arn

@@ -11,6 +11,74 @@ from decimal import Decimal
 import os
 from typing import Dict, Optional
 
+# OpenTelemetry initialization for SigNoz
+def init_otel():
+    """Initialize OpenTelemetry for SigNoz Cloud"""
+    try:
+        from opentelemetry import trace, metrics
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.propagate import set_global_textmap
+        from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+        from opentelemetry.instrumentation.boto3sqs import Boto3SQSInstrumentor
+        from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
+
+        # Get SigNoz configuration from environment
+        signoz_endpoint = os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', 'https://ingest.us.signoz.cloud:443')
+        signoz_headers = os.environ.get('OTEL_EXPORTER_OTLP_HEADERS', '')
+        service_name = os.environ.get('OTEL_SERVICE_NAME', 'stock-recommendations-api')
+
+        # Create resource
+        resource = Resource.create({
+            "service.name": service_name,
+            "service.namespace": "stock-analytics",
+            "deployment.environment": "development"
+        })
+
+        # Configure tracing
+        trace_exporter = OTLPSpanExporter(
+            endpoint=signoz_endpoint,
+            headers=(dict([header.split('=', 1) for header in signoz_headers.split(',') if '=' in header]) if signoz_headers else {}),
+            insecure=False
+        )
+
+        tracer_provider = TracerProvider(resource=resource)
+        span_processor = BatchSpanProcessor(trace_exporter)
+        tracer_provider.add_span_processor(span_processor)
+        trace.set_tracer_provider(tracer_provider)
+
+        # Configure metrics
+        metric_exporter = OTLPMetricExporter(
+            endpoint=signoz_endpoint,
+            headers=(dict([header.split('=', 1) for header in signoz_headers.split(',') if '=' in header]) if signoz_headers else {}),
+            insecure=False
+        )
+
+        metric_reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=30000)
+        meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+        metrics.set_meter_provider(meter_provider)
+
+        # Set basic trace context propagator
+        set_global_textmap(TraceContextTextMapPropagator())
+
+        # Instrument AWS services
+        BotocoreInstrumentor().instrument()
+
+        print(f"OpenTelemetry initialized for SigNoz: {signoz_endpoint}")
+        return True
+
+    except Exception as e:
+        print(f"Failed to initialize OpenTelemetry: {e}")
+        return False
+
+# Initialize OTEL
+OTEL_ENABLED = init_otel()
+
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -209,6 +277,20 @@ def lambda_handler(event, context):
     """
     Main Lambda handler function for API Gateway (REST / HTTP API) or test invoke.
     """
+    # Create trace for this request if OTEL is enabled
+    tracer = None
+    span = None
+
+    if OTEL_ENABLED:
+        try:
+            from opentelemetry import trace
+            tracer = trace.get_tracer(__name__)
+            span = tracer.start_span("lambda_handler")
+            span.set_attribute("aws.lambda.function_name", context.function_name if context else "unknown")
+            span.set_attribute("aws.lambda.request_id", context.aws_request_id if context else "unknown")
+        except Exception as e:
+            logger.warning(f"Failed to create OTEL span: {e}")
+
     try:
         _init_cache()
 
@@ -263,6 +345,9 @@ def lambda_handler(event, context):
 
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")
+        if span:
+            span.set_attribute("error", True)
+            span.set_attribute("error.message", str(e))
         return {
             'statusCode': 500,
             'headers': get_cors_headers(),
@@ -271,6 +356,13 @@ def lambda_handler(event, context):
                 'timestamp': datetime.utcnow().isoformat()
             })
         }
+    finally:
+        # Close the OTEL span
+        if span:
+            try:
+                span.end()
+            except Exception as e:
+                logger.warning(f"Failed to end OTEL span: {e}")
 
 def get_from_cache(key):
     """

@@ -1,0 +1,526 @@
+# SigNoz Observability Integration for AWS Services
+# Comprehensive observability for API Gateway, ElastiCache, RDS, and SNS
+
+# Variables for SigNoz services integration
+variable "enable_api_gateway_x_ray" {
+  description = "Enable X-Ray tracing for API Gateway"
+  type        = bool
+  default     = true
+}
+
+variable "enable_enhanced_monitoring" {
+  description = "Enable enhanced monitoring for RDS and ElastiCache"
+  type        = bool
+  default     = true
+}
+
+# CloudWatch Log Groups for AWS Services
+resource "aws_cloudwatch_log_group" "api_gateway_access_logs" {
+  name              = "/aws/apigateway/stock-recommendations-api-access"
+  retention_in_days = var.api_gateway_log_retention
+
+  tags = merge(
+    {
+      Name = "api-gateway-access-logs"
+      Service = "api-gateway"
+      ObservabilityTarget = "signoz"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_cloudwatch_log_group" "api_gateway_execution_logs" {
+  name              = "/aws/apigateway/stock-recommendations-api-execution"
+  retention_in_days = var.api_gateway_log_retention
+
+  tags = merge(
+    {
+      Name = "api-gateway-execution-logs"
+      Service = "api-gateway"
+      ObservabilityTarget = "signoz"
+    },
+    var.additional_tags
+  )
+}
+
+# API Gateway X-Ray Tracing Configuration
+resource "aws_api_gateway_method_settings" "api_gateway_observability" {
+  rest_api_id = aws_api_gateway_rest_api.stock_recommendations_api.id
+  stage_name  = aws_api_gateway_stage.stock_recommendations_api_stage.stage_name
+  method_path = "*/*"
+
+  settings {
+    # Enable X-Ray tracing
+    xray_tracing_enabled = var.enable_api_gateway_x_ray
+
+    # Enable detailed CloudWatch metrics
+    metrics_enabled = true
+
+    # Enable CloudWatch logging
+    logging_level   = "INFO"
+    data_trace_enabled = true
+
+    # Throttling settings for observability
+    throttling_burst_limit = 5000
+    throttling_rate_limit  = 2000
+  }
+
+  depends_on = [aws_api_gateway_stage.stock_recommendations_api_stage]
+}
+
+# CloudWatch Metrics for API Gateway
+resource "aws_cloudwatch_metric_alarm" "api_gateway_4xx_errors" {
+  alarm_name          = "api-gateway-4xx-errors-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "4XXError"
+  namespace           = "AWS/ApiGateway"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "10"
+  alarm_description   = "API Gateway 4XX errors are high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    ApiName   = aws_api_gateway_rest_api.stock_recommendations_api.name
+    Stage     = aws_api_gateway_stage.stock_recommendations_api_stage.stage_name
+  }
+
+  tags = merge(
+    {
+      Name = "api-gateway-4xx-errors"
+      Service = "api-gateway"
+      AlertType = "error"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_gateway_5xx_errors" {
+  alarm_name          = "api-gateway-5xx-errors-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "5XXError"
+  namespace           = "AWS/ApiGateway"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "5"
+  alarm_description   = "API Gateway 5XX errors are high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    ApiName   = aws_api_gateway_rest_api.stock_recommendations_api.name
+    Stage     = aws_api_gateway_stage.stock_recommendations_api_stage.stage_name
+  }
+
+  tags = merge(
+    {
+      Name = "api-gateway-5xx-errors"
+      Service = "api-gateway"
+      AlertType = "error"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_gateway_latency" {
+  alarm_name          = "api-gateway-latency-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "Latency"
+  namespace           = "AWS/ApiGateway"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "5000"  # 5 seconds
+  alarm_description   = "API Gateway latency is high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    ApiName   = aws_api_gateway_rest_api.stock_recommendations_api.name
+    Stage     = aws_api_gateway_stage.stock_recommendations_api_stage.stage_name
+  }
+
+  tags = merge(
+    {
+      Name = "api-gateway-latency"
+      Service = "api-gateway"
+      AlertType = "performance"
+    },
+    var.additional_tags
+  )
+}
+
+# ElastiCache CloudWatch Alarms
+resource "aws_cloudwatch_metric_alarm" "elasticache_cpu_utilization" {
+  alarm_name          = "elasticache-cpu-utilization-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ElastiCache"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "ElastiCache CPU utilization is high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    CacheClusterId = "${aws_elasticache_replication_group.stock_analytics_valkey.replication_group_id}-001"
+  }
+
+  tags = merge(
+    {
+      Name = "elasticache-cpu"
+      Service = "elasticache"
+      AlertType = "performance"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "elasticache_memory_utilization" {
+  alarm_name          = "elasticache-memory-utilization-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "DatabaseMemoryUsagePercentage"
+  namespace           = "AWS/ElastiCache"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "90"
+  alarm_description   = "ElastiCache memory utilization is high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    CacheClusterId = "${aws_elasticache_replication_group.stock_analytics_valkey.replication_group_id}-001"
+  }
+
+  tags = merge(
+    {
+      Name = "elasticache-memory"
+      Service = "elasticache"
+      AlertType = "performance"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "elasticache_connections" {
+  alarm_name          = "elasticache-connections-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CurrConnections"
+  namespace           = "AWS/ElastiCache"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "100"
+  alarm_description   = "ElastiCache connection count is high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    CacheClusterId = "${aws_elasticache_replication_group.stock_analytics_valkey.replication_group_id}-001"
+  }
+
+  tags = merge(
+    {
+      Name = "elasticache-connections"
+      Service = "elasticache"
+      AlertType = "performance"
+    },
+    var.additional_tags
+  )
+}
+
+# RDS CloudWatch Alarms
+resource "aws_cloudwatch_metric_alarm" "rds_cpu_utilization" {
+  alarm_name          = "rds-cpu-utilization-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/RDS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "RDS CPU utilization is high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    DBClusterIdentifier = aws_rds_cluster.stock_analytics_aurora.cluster_identifier
+  }
+
+  tags = merge(
+    {
+      Name = "rds-cpu"
+      Service = "rds"
+      AlertType = "performance"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_database_connections" {
+  alarm_name          = "rds-database-connections-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "DatabaseConnections"
+  namespace           = "AWS/RDS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "80"
+  alarm_description   = "RDS database connections are high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    DBClusterIdentifier = aws_rds_cluster.stock_analytics_aurora.cluster_identifier
+  }
+
+  tags = merge(
+    {
+      Name = "rds-connections"
+      Service = "rds"
+      AlertType = "performance"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_free_storage_space" {
+  alarm_name          = "rds-free-storage-space-low"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "FreeStorageSpace"
+  namespace           = "AWS/RDS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "2000000000"  # 2GB in bytes
+  alarm_description   = "RDS free storage space is low"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    DBClusterIdentifier = aws_rds_cluster.stock_analytics_aurora.cluster_identifier
+  }
+
+  tags = merge(
+    {
+      Name = "rds-storage"
+      Service = "rds"
+      AlertType = "capacity"
+    },
+    var.additional_tags
+  )
+}
+
+# SNS Topic for Observability Alerts
+resource "aws_sns_topic" "observability_alerts" {
+  name = "stock-analytics-observability-alerts"
+
+  tags = merge(
+    {
+      Name = "observability-alerts"
+      Service = "sns"
+      Purpose = "observability-alerting"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_sns_topic_subscription" "observability_alerts_email" {
+  count     = var.cost_alert_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.observability_alerts.arn
+  protocol  = "email"
+  endpoint  = var.cost_alert_email
+}
+
+# SNS CloudWatch Alarms
+resource "aws_cloudwatch_metric_alarm" "sns_publish_failures" {
+  for_each = toset([
+    aws_sns_topic.cost_alerts.name,
+    aws_sns_topic.observability_alerts.name
+  ])
+
+  alarm_name          = "sns-publish-failures-${each.value}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "NumberOfNotificationsFailed"
+  namespace           = "AWS/SNS"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "0"
+  alarm_description   = "SNS publish failures detected for ${each.value}"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    TopicName = each.value
+  }
+
+  tags = merge(
+    {
+      Name = "sns-failures-${each.value}"
+      Service = "sns"
+      AlertType = "error"
+    },
+    var.additional_tags
+  )
+}
+
+# CloudWatch Log Insights Queries for SigNoz Integration
+resource "aws_cloudwatch_query_definition" "api_gateway_errors" {
+  name = "API Gateway Errors"
+
+  log_group_names = [
+    aws_cloudwatch_log_group.api_gateway_access_logs.name,
+    aws_cloudwatch_log_group.api_gateway_execution_logs.name
+  ]
+
+  query_string = <<EOF
+fields @timestamp, @message, status, responseLength, requestTime
+| filter status >= 400
+| sort @timestamp desc
+| limit 100
+EOF
+}
+
+resource "aws_cloudwatch_query_definition" "api_gateway_performance" {
+  name = "API Gateway Performance"
+
+  log_group_names = [
+    aws_cloudwatch_log_group.api_gateway_access_logs.name
+  ]
+
+  query_string = <<EOF
+fields @timestamp, @message, status, responseLength, requestTime
+| filter ispresent(responseLength)
+| stats avg(responseLength), avg(requestTime), count() by bin(5m)
+| sort @timestamp desc
+EOF
+}
+
+# Performance Insights for RDS (if enabled)
+resource "aws_cloudwatch_metric_alarm" "rds_read_latency" {
+  count               = var.enable_enhanced_monitoring ? 1 : 0
+  alarm_name          = "rds-read-latency-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "ReadLatency"
+  namespace           = "AWS/RDS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "0.2"  # 200ms
+  alarm_description   = "RDS read latency is high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    DBClusterIdentifier = aws_rds_cluster.stock_analytics_aurora.cluster_identifier
+  }
+
+  tags = merge(
+    {
+      Name = "rds-read-latency"
+      Service = "rds"
+      AlertType = "performance"
+    },
+    var.additional_tags
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_write_latency" {
+  count               = var.enable_enhanced_monitoring ? 1 : 0
+  alarm_name          = "rds-write-latency-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "WriteLatency"
+  namespace           = "AWS/RDS"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "0.2"  # 200ms
+  alarm_description   = "RDS write latency is high"
+  alarm_actions       = [aws_sns_topic.observability_alerts.arn]
+
+  dimensions = {
+    DBClusterIdentifier = aws_rds_cluster.stock_analytics_aurora.cluster_identifier
+  }
+
+  tags = merge(
+    {
+      Name = "rds-write-latency"
+      Service = "rds"
+      AlertType = "performance"
+    },
+    var.additional_tags
+  )
+}
+
+# CloudWatch Dashboard for Observability
+resource "aws_cloudwatch_dashboard" "stock_analytics_observability" {
+  dashboard_name = "stock-analytics-observability"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/ApiGateway", "Count", "ApiName", aws_api_gateway_rest_api.stock_recommendations_api.name],
+            [".", "4XXError", ".", "."],
+            [".", "5XXError", ".", "."],
+            [".", "Latency", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "API Gateway Metrics"
+          period  = 300
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/ElastiCache", "CPUUtilization", "CacheClusterId", "${aws_elasticache_replication_group.stock_analytics_valkey.replication_group_id}-001"],
+            [".", "DatabaseMemoryUsagePercentage", ".", "."],
+            [".", "CurrConnections", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "ElastiCache Metrics"
+          period  = 300
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 12
+        width  = 12
+        height = 6
+
+        properties = {
+          metrics = [
+            ["AWS/RDS", "CPUUtilization", "DBClusterIdentifier", aws_rds_cluster.stock_analytics_aurora.cluster_identifier],
+            [".", "DatabaseConnections", ".", "."],
+            [".", "FreeStorageSpace", ".", "."]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = data.aws_region.current.name
+          title   = "RDS Metrics"
+          period  = 300
+        }
+      }
+    ]
+  })
+
+  depends_on = [
+    aws_api_gateway_rest_api.stock_recommendations_api,
+    aws_elasticache_replication_group.stock_analytics_valkey,
+    aws_rds_cluster.stock_analytics_aurora
+  ]
+}

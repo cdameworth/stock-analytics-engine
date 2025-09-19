@@ -296,3 +296,16 @@ variable "migration_phase" {
     error_message = "Migration phase must be one of: planning, testing, dual-shipping, cutover, cleanup."
   }
 }
+
+# X-Ray Configuration
+variable "xray_log_retention_days" {
+  description = "CloudWatch log retention period for X-Ray trace insights (in days)"
+  type        = number
+  default     = 7
+}
+
+variable "lambda_environment_variables" {
+  description = "Base environment variables for Lambda functions"
+  type        = map(string)
+  default     = {}
+}
