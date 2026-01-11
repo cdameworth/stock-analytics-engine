@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     flask==3.0.0 \
     gunicorn==21.2.0 \
     boto3==1.34.0 \
+    psycopg2-binary==2.9.9 \
     python-dotenv==1.0.0
 
 # Copy shared utilities first (for better caching)

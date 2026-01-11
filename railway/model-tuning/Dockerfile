@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir \
     schedule==1.2.0 \
     boto3==1.34.0 \
+    psycopg2-binary==2.9.9 \
     python-dotenv==1.0.0 \
     scikit-learn==1.4.0 \
     xgboost==2.0.3 \
