@@ -30,19 +30,32 @@ import json
 from flask import Flask, request, jsonify
 from datetime import datetime
 
+# Set AWS region for boto3 compatibility (even though we use PostgreSQL on Railway)
+# This prevents import errors from Lambda functions that still have boto3 imports
+os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
+os.environ.setdefault('AWS_REGION', 'us-east-1')
+
 # Add lambda_functions to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-# Import Lambda function handlers
-from lambda_functions import stock_recommendations_api
-from lambda_functions import dual_prediction_reporting_api
-from lambda_functions import custom_stock_request_api
+# Import Lambda function handlers with error handling for Railway compatibility
+try:
+    from lambda_functions import stock_recommendations_api
+    from lambda_functions import dual_prediction_reporting_api
+    from lambda_functions import custom_stock_request_api
+    LAMBDA_FUNCTIONS_AVAILABLE = True
+except Exception as e:
+    LAMBDA_FUNCTIONS_AVAILABLE = False
+    stock_recommendations_api = None
+    dual_prediction_reporting_api = None
+    custom_stock_request_api = None
+    print(f"Warning: Lambda functions not fully available: {e}")
 
 # Import shared utilities
 from lambda_functions.shared.lambda_utils import LambdaResponse
 from lambda_functions.shared.error_handling import StructuredLogger
 
-# Import accuracy tracking modules
+# Import accuracy tracking modules (these use PostgreSQL, fully Railway-compatible)
 from lambda_functions.shared.accuracy_tracking import (
     ConfidenceCalibrationTracker,
     SymbolAccuracyAggregator,
@@ -171,6 +184,12 @@ def root():
 @app.route('/recommendations', methods=['GET'])
 def get_recommendations():
     """Get all stock recommendations."""
+    if not LAMBDA_FUNCTIONS_AVAILABLE:
+        return jsonify({
+            'error': 'Lambda functions not available',
+            'message': 'Use /analytics endpoints for PostgreSQL-based data'
+        }), 503
+
     event = convert_flask_to_lambda_event(request)
     context = MockLambdaContext()
 
@@ -184,6 +203,12 @@ def get_recommendations():
 @app.route('/recommendations/<symbol>', methods=['GET'])
 def get_recommendation_by_symbol(symbol):
     """Get recommendation for specific stock symbol."""
+    if not LAMBDA_FUNCTIONS_AVAILABLE:
+        return jsonify({
+            'error': 'Lambda functions not available',
+            'message': 'Use /analytics endpoints for PostgreSQL-based data'
+        }), 503
+
     event = convert_flask_to_lambda_event(request, path_params={'symbol': symbol.upper()})
     context = MockLambdaContext()
 
@@ -198,6 +223,12 @@ def get_recommendation_by_symbol(symbol):
 @app.route('/analytics/dashboard', methods=['GET'])
 def analytics_dashboard():
     """Get analytics dashboard data."""
+    if not LAMBDA_FUNCTIONS_AVAILABLE:
+        return jsonify({
+            'error': 'Legacy analytics not available',
+            'message': 'Use /analytics/calibration, /analytics/symbols, etc. for PostgreSQL-based analytics'
+        }), 503
+
     event = convert_flask_to_lambda_event(request)
     context = MockLambdaContext()
 
@@ -211,6 +242,12 @@ def analytics_dashboard():
 @app.route('/analytics/detailed', methods=['GET'])
 def analytics_detailed():
     """Get detailed analytics data."""
+    if not LAMBDA_FUNCTIONS_AVAILABLE:
+        return jsonify({
+            'error': 'Legacy analytics not available',
+            'message': 'Use /analytics/calibration, /analytics/symbols, etc. for PostgreSQL-based analytics'
+        }), 503
+
     event = convert_flask_to_lambda_event(request)
     event['path'] = '/analytics/detailed'  # Update path for routing
     context = MockLambdaContext()
@@ -226,6 +263,12 @@ def analytics_detailed():
 @app.route('/custom-request', methods=['POST'])
 def custom_request():
     """Process custom stock analysis request."""
+    if not LAMBDA_FUNCTIONS_AVAILABLE:
+        return jsonify({
+            'error': 'Lambda functions not available',
+            'message': 'Custom requests require full Lambda function support'
+        }), 503
+
     event = convert_flask_to_lambda_event(request)
     context = MockLambdaContext()
 

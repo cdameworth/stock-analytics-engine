@@ -18,15 +18,31 @@ import schedule
 from datetime import datetime, time as dt_time
 import pytz
 
+# Set AWS region for boto3 compatibility (even though we use PostgreSQL on Railway)
+# This prevents import errors from Lambda functions that still have boto3 imports
+os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
+os.environ.setdefault('AWS_REGION', 'us-east-1')
+
 # Add lambda_functions to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from lambda_functions import price_model_tuning
-from lambda_functions import time_model_tuning
-from lambda_functions import dual_accuracy_tracker
+# Import Lambda functions with error handling for Railway compatibility
+try:
+    from lambda_functions import price_model_tuning
+    from lambda_functions import time_model_tuning
+    from lambda_functions import dual_accuracy_tracker
+    LAMBDA_FUNCTIONS_AVAILABLE = True
+except Exception as e:
+    # Lambda functions may not be fully compatible with Railway yet
+    LAMBDA_FUNCTIONS_AVAILABLE = False
+    price_model_tuning = None
+    time_model_tuning = None
+    dual_accuracy_tracker = None
+    print(f"Warning: Lambda functions not available: {e}")
+
 from lambda_functions.shared.error_handling import StructuredLogger
 
-# Import accuracy tracking modules
+# Import accuracy tracking modules (these use PostgreSQL, fully Railway-compatible)
 from lambda_functions.shared.accuracy_tracking import (
     ConfidenceCalibrationTracker,
     SymbolAccuracyAggregator,
@@ -50,6 +66,11 @@ class MockLambdaContext:
 
 def run_price_model_tuning():
     """Execute price model tuning."""
+    if not LAMBDA_FUNCTIONS_AVAILABLE:
+        logger.log_info("Price model tuning skipped - Lambda functions not available on Railway")
+        logger.log_info("Using PostgreSQL-based accuracy tracking instead")
+        return
+
     try:
         logger.log_info("Starting price model tuning")
 
@@ -79,6 +100,11 @@ def run_price_model_tuning():
 
 def run_time_model_tuning():
     """Execute time-to-hit model tuning."""
+    if not LAMBDA_FUNCTIONS_AVAILABLE:
+        logger.log_info("Time model tuning skipped - Lambda functions not available on Railway")
+        logger.log_info("Using PostgreSQL-based accuracy tracking instead")
+        return
+
     try:
         logger.log_info("Starting time-to-hit model tuning")
 
@@ -108,6 +134,13 @@ def run_time_model_tuning():
 
 def run_accuracy_tracking():
     """Execute accuracy tracking and validation."""
+    if not LAMBDA_FUNCTIONS_AVAILABLE:
+        logger.log_info("Legacy accuracy tracking skipped - using PostgreSQL tracking instead")
+        # Run the PostgreSQL-based accuracy tracking
+        run_confidence_calibration()
+        run_symbol_accuracy_aggregation()
+        return
+
     try:
         logger.log_info("Starting accuracy tracking")
 
