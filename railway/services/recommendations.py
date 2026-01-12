@@ -208,16 +208,15 @@ class RecommendationsService:
             rows = db.execute("""
                 SELECT
                     symbol,
-                    recommendation,
+                    recommendation_type,
                     target_price,
                     current_price,
-                    confidence_score,
-                    analysis_summary,
+                    company_name,
                     created_at
                 FROM recommendations
-                WHERE recommendation = %s
+                WHERE recommendation_type = %s
                   AND created_at > NOW() - INTERVAL '7 days'
-                ORDER BY confidence_score DESC
+                ORDER BY created_at DESC
                 LIMIT %s
             """, (recommendation_type, limit))
 
@@ -228,9 +227,8 @@ class RecommendationsService:
                     'recommendation': row[1],
                     'target_price': float(row[2]) if row[2] else None,
                     'current_price': float(row[3]) if row[3] else None,
-                    'confidence_score': float(row[4]) if row[4] else None,
-                    'analysis_summary': row[5],
-                    'created_at': row[6].isoformat() if row[6] else None
+                    'company_name': row[4],
+                    'created_at': row[5].isoformat() if row[5] else None
                 })
 
             return {
@@ -263,21 +261,21 @@ class RecommendationsService:
             }
 
         try:
+            # Note: Current schema doesn't have confidence_score
+            # Return all recent recommendations sorted by date
             rows = db.execute("""
                 SELECT
                     symbol,
-                    recommendation,
+                    recommendation_type,
                     target_price,
                     current_price,
-                    confidence_score,
-                    analysis_summary,
+                    company_name,
                     created_at
                 FROM recommendations
-                WHERE confidence_score >= %s
-                  AND created_at > NOW() - INTERVAL '7 days'
-                ORDER BY confidence_score DESC
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                ORDER BY created_at DESC
                 LIMIT %s
-            """, (min_confidence, limit))
+            """, (limit,))
 
             recommendations = []
             for row in rows:
@@ -286,9 +284,8 @@ class RecommendationsService:
                     'recommendation': row[1],
                     'target_price': float(row[2]) if row[2] else None,
                     'current_price': float(row[3]) if row[3] else None,
-                    'confidence_score': float(row[4]) if row[4] else None,
-                    'analysis_summary': row[5],
-                    'created_at': row[6].isoformat() if row[6] else None
+                    'company_name': row[4],
+                    'created_at': row[5].isoformat() if row[5] else None
                 })
 
             return {
