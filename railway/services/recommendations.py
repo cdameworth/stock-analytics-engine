@@ -39,10 +39,13 @@ class RecommendationsService:
                     target_price,
                     current_price,
                     company_name,
-                    created_at
+                    confidence_score,
+                    analysis_summary,
+                    created_at,
+                    updated_at
                 FROM recommendations
                 WHERE created_at > NOW() - INTERVAL '7 days'
-                ORDER BY created_at DESC
+                ORDER BY confidence_score DESC NULLS LAST, created_at DESC
                 LIMIT %s
             """, (limit,))
 
@@ -54,7 +57,10 @@ class RecommendationsService:
                     'target_price': float(row[2]) if row[2] else None,
                     'current_price': float(row[3]) if row[3] else None,
                     'company_name': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None
+                    'confidence_score': float(row[5]) if row[5] else None,
+                    'analysis_summary': row[6],
+                    'created_at': row[7].isoformat() if row[7] else None,
+                    'updated_at': row[8].isoformat() if row[8] else None
                 })
 
             return {
@@ -89,7 +95,10 @@ class RecommendationsService:
                     target_price,
                     current_price,
                     company_name,
-                    created_at
+                    confidence_score,
+                    analysis_summary,
+                    created_at,
+                    updated_at
                 FROM recommendations
                 WHERE symbol = %s
                 ORDER BY created_at DESC
@@ -105,7 +114,10 @@ class RecommendationsService:
                         'target_price': float(row[2]) if row[2] else None,
                         'current_price': float(row[3]) if row[3] else None,
                         'company_name': row[4],
-                        'created_at': row[5].isoformat() if row[5] else None
+                        'confidence_score': float(row[5]) if row[5] else None,
+                        'analysis_summary': row[6],
+                        'created_at': row[7].isoformat() if row[7] else None,
+                        'updated_at': row[8].isoformat() if row[8] else None
                     },
                     'timestamp': datetime.utcnow().isoformat()
                 }
@@ -149,12 +161,12 @@ class RecommendationsService:
         try:
             db.execute("""
                 INSERT INTO recommendations (
-                    symbol, recommendation, target_price, current_price,
+                    symbol, recommendation_type, target_price, current_price,
                     confidence_score, analysis_summary
                 ) VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (symbol)
                 DO UPDATE SET
-                    recommendation = EXCLUDED.recommendation,
+                    recommendation_type = EXCLUDED.recommendation_type,
                     target_price = EXCLUDED.target_price,
                     current_price = EXCLUDED.current_price,
                     confidence_score = EXCLUDED.confidence_score,
@@ -212,11 +224,13 @@ class RecommendationsService:
                     target_price,
                     current_price,
                     company_name,
+                    confidence_score,
+                    analysis_summary,
                     created_at
                 FROM recommendations
                 WHERE recommendation_type = %s
                   AND created_at > NOW() - INTERVAL '7 days'
-                ORDER BY created_at DESC
+                ORDER BY confidence_score DESC NULLS LAST, created_at DESC
                 LIMIT %s
             """, (recommendation_type, limit))
 
@@ -228,7 +242,9 @@ class RecommendationsService:
                     'target_price': float(row[2]) if row[2] else None,
                     'current_price': float(row[3]) if row[3] else None,
                     'company_name': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None
+                    'confidence_score': float(row[5]) if row[5] else None,
+                    'analysis_summary': row[6],
+                    'created_at': row[7].isoformat() if row[7] else None
                 })
 
             return {
@@ -261,8 +277,6 @@ class RecommendationsService:
             }
 
         try:
-            # Note: Current schema doesn't have confidence_score
-            # Return all recent recommendations sorted by date
             rows = db.execute("""
                 SELECT
                     symbol,
@@ -270,12 +284,15 @@ class RecommendationsService:
                     target_price,
                     current_price,
                     company_name,
+                    confidence_score,
+                    analysis_summary,
                     created_at
                 FROM recommendations
-                WHERE created_at > NOW() - INTERVAL '7 days'
-                ORDER BY created_at DESC
+                WHERE confidence_score >= %s
+                  AND created_at > NOW() - INTERVAL '7 days'
+                ORDER BY confidence_score DESC
                 LIMIT %s
-            """, (limit,))
+            """, (min_confidence, limit))
 
             recommendations = []
             for row in rows:
@@ -285,7 +302,9 @@ class RecommendationsService:
                     'target_price': float(row[2]) if row[2] else None,
                     'current_price': float(row[3]) if row[3] else None,
                     'company_name': row[4],
-                    'created_at': row[5].isoformat() if row[5] else None
+                    'confidence_score': float(row[5]) if row[5] else None,
+                    'analysis_summary': row[6],
+                    'created_at': row[7].isoformat() if row[7] else None
                 })
 
             return {
