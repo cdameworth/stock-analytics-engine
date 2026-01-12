@@ -16,13 +16,15 @@ WORKDIR /app
 # Copy requirements
 COPY lambda_requirements/requirements_pandas.txt ./requirements.txt
 
-# Install Python dependencies (no boto3 needed for Railway-native)
+# Install Python dependencies
+# Note: boto3 included for shared utility imports (not used at runtime)
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir \
     schedule==1.2.0 \
     psycopg2-binary==2.9.9 \
     python-dotenv==1.0.0 \
-    pytz==2024.1
+    pytz==2024.1 \
+    boto3==1.34.0
 
 # Copy shared utilities (database, error handling)
 COPY lambda_functions/shared /app/lambda_functions/shared
