@@ -96,7 +96,7 @@ def run_price_model_tuning():
             logger.log_error(f"Price model tuning failed: {response.get('body')}")
 
     except Exception as e:
-        logger.log_error(f"Error during price model tuning: {str(e)}", error=e)
+        logger.log_error(e, context={'operation': 'price_model_tuning'})
 
 def run_time_model_tuning():
     """Execute time-to-hit model tuning."""
@@ -130,7 +130,7 @@ def run_time_model_tuning():
             logger.log_error(f"Time model tuning failed: {response.get('body')}")
 
     except Exception as e:
-        logger.log_error(f"Error during time model tuning: {str(e)}", error=e)
+        logger.log_error(e, context={'operation': 'time_model_tuning'})
 
 def run_accuracy_tracking():
     """Execute accuracy tracking and validation."""
@@ -166,7 +166,7 @@ def run_accuracy_tracking():
             logger.log_error(f"Accuracy tracking failed: {response.get('body')}")
 
     except Exception as e:
-        logger.log_error(f"Error during accuracy tracking: {str(e)}", error=e)
+        logger.log_error(e, context={'operation': 'accuracy_tracking'})
 
 def run_weekly_comprehensive_tuning():
     """Run comprehensive weekly model tuning (Sunday 2 AM EST)."""
@@ -215,7 +215,7 @@ def run_confidence_calibration():
                 logger.log_info(f"Calibration [{model_type}]: insufficient data")
 
     except Exception as e:
-        logger.log_error(f"Error during confidence calibration: {str(e)}", error=e)
+        logger.log_error(e, context={'operation': 'confidence_calibration'})
 
 
 def run_symbol_accuracy_aggregation():
@@ -246,7 +246,7 @@ def run_symbol_accuracy_aggregation():
                 ))
 
     except Exception as e:
-        logger.log_error(f"Error during symbol accuracy aggregation: {str(e)}", error=e)
+        logger.log_error(e, context={'operation': 'symbol_accuracy_aggregation'})
 
 
 def run_deployment_gate_evaluation():
@@ -271,7 +271,7 @@ def run_deployment_gate_evaluation():
                 )
 
     except Exception as e:
-        logger.log_error(f"Error during deployment gate evaluation: {str(e)}", error=e)
+        logger.log_error(e, context={'operation': 'deployment_gate_evaluation'})
 
 
 def run_market_condition_tracking():
@@ -296,7 +296,7 @@ def run_market_condition_tracking():
                 )
 
     except Exception as e:
-        logger.log_error(f"Error during market condition tracking: {str(e)}", error=e)
+        logger.log_error(e, context={'operation': 'market_condition_tracking'})
 
 
 def run_error_distribution_analysis():
@@ -318,7 +318,7 @@ def run_error_distribution_analysis():
                 )
 
     except Exception as e:
-        logger.log_error(f"Error during error distribution analysis: {str(e)}", error=e)
+        logger.log_error(e, context={'operation': 'error_distribution_analysis'})
 
 
 def setup_schedules():
@@ -391,7 +391,7 @@ def main():
             logger.log_info("Worker shutting down gracefully")
             break
         except Exception as e:
-            logger.log_error(f"Error in worker loop: {str(e)}", error=e)
+            logger.log_error(e, context={'operation': 'worker_loop'})
             time.sleep(300)  # Wait 5 minutes before retrying
 
 if __name__ == '__main__':
