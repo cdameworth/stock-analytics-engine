@@ -42,11 +42,10 @@ class PredictionsService:
                     id,
                     symbol,
                     predicted_price,
-                    confidence_score,
-                    recommendation,
-                    prediction_date,
-                    validation_date,
+                    confidence,
                     validation_status,
+                    timestamp,
+                    validation_date,
                     actual_price,
                     accuracy_pct,
                     validated_at
@@ -63,7 +62,7 @@ class PredictionsService:
                 query += " AND validation_status = %s"
                 params.append(status)
 
-            query += " ORDER BY prediction_date DESC LIMIT %s"
+            query += " ORDER BY timestamp DESC LIMIT %s"
             params.append(limit)
 
             rows = db.execute(query, tuple(params) if params else None)
@@ -75,13 +74,12 @@ class PredictionsService:
                     'symbol': row[1],
                     'predicted_price': float(row[2]) if row[2] else None,
                     'confidence_score': float(row[3]) if row[3] else None,
-                    'recommendation': row[4],
+                    'validation_status': row[4],
                     'prediction_date': row[5].isoformat() if row[5] else None,
                     'validation_date': row[6].isoformat() if row[6] else None,
-                    'validation_status': row[7],
-                    'actual_price': float(row[8]) if row[8] else None,
-                    'accuracy_pct': float(row[9]) if row[9] else None,
-                    'validated_at': row[10].isoformat() if row[10] else None
+                    'actual_price': float(row[7]) if row[7] else None,
+                    'accuracy_pct': float(row[8]) if row[8] else None,
+                    'validated_at': row[9].isoformat() if row[9] else None
                 })
 
             return {
@@ -435,26 +433,26 @@ class PredictionsService:
                     COUNT(*) FILTER (WHERE validation_status = 'validated') as validated,
                     COUNT(*) FILTER (WHERE validation_status = 'pending') as pending,
                     AVG(accuracy_pct) FILTER (WHERE validation_status = 'validated') as avg_accuracy,
-                    AVG(confidence_score) as avg_confidence
+                    AVG(confidence) as avg_confidence
                 FROM price_predictions
-                WHERE prediction_date > NOW() - INTERVAL '30 days'
+                WHERE timestamp > NOW() - INTERVAL '30 days'
             """)
 
             # Accuracy by confidence bucket
             buckets = db.execute("""
                 SELECT
                     CASE
-                        WHEN confidence_score >= 0.9 THEN '90-100%'
-                        WHEN confidence_score >= 0.8 THEN '80-90%'
-                        WHEN confidence_score >= 0.7 THEN '70-80%'
-                        WHEN confidence_score >= 0.6 THEN '60-70%'
+                        WHEN confidence >= 0.9 THEN '90-100%'
+                        WHEN confidence >= 0.8 THEN '80-90%'
+                        WHEN confidence >= 0.7 THEN '70-80%'
+                        WHEN confidence >= 0.6 THEN '60-70%'
                         ELSE '< 60%'
                     END as bucket,
                     COUNT(*) as count,
                     AVG(accuracy_pct) as avg_accuracy
                 FROM price_predictions
                 WHERE validation_status = 'validated'
-                  AND prediction_date > NOW() - INTERVAL '30 days'
+                  AND timestamp > NOW() - INTERVAL '30 days'
                 GROUP BY bucket
                 ORDER BY bucket DESC
             """)

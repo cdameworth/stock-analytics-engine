@@ -35,16 +35,14 @@ class RecommendationsService:
             rows = db.execute("""
                 SELECT
                     symbol,
-                    recommendation,
+                    recommendation_type,
                     target_price,
                     current_price,
-                    confidence_score,
-                    analysis_summary,
-                    created_at,
-                    updated_at
+                    company_name,
+                    created_at
                 FROM recommendations
                 WHERE created_at > NOW() - INTERVAL '7 days'
-                ORDER BY confidence_score DESC, created_at DESC
+                ORDER BY created_at DESC
                 LIMIT %s
             """, (limit,))
 
@@ -55,10 +53,8 @@ class RecommendationsService:
                     'recommendation': row[1],
                     'target_price': float(row[2]) if row[2] else None,
                     'current_price': float(row[3]) if row[3] else None,
-                    'confidence_score': float(row[4]) if row[4] else None,
-                    'analysis_summary': row[5],
-                    'created_at': row[6].isoformat() if row[6] else None,
-                    'updated_at': row[7].isoformat() if row[7] else None
+                    'company_name': row[4],
+                    'created_at': row[5].isoformat() if row[5] else None
                 })
 
             return {
@@ -89,13 +85,11 @@ class RecommendationsService:
             row = db.execute_one("""
                 SELECT
                     symbol,
-                    recommendation,
+                    recommendation_type,
                     target_price,
                     current_price,
-                    confidence_score,
-                    analysis_summary,
-                    created_at,
-                    updated_at
+                    company_name,
+                    created_at
                 FROM recommendations
                 WHERE symbol = %s
                 ORDER BY created_at DESC
@@ -110,10 +104,8 @@ class RecommendationsService:
                         'recommendation': row[1],
                         'target_price': float(row[2]) if row[2] else None,
                         'current_price': float(row[3]) if row[3] else None,
-                        'confidence_score': float(row[4]) if row[4] else None,
-                        'analysis_summary': row[5],
-                        'created_at': row[6].isoformat() if row[6] else None,
-                        'updated_at': row[7].isoformat() if row[7] else None
+                        'company_name': row[4],
+                        'created_at': row[5].isoformat() if row[5] else None
                     },
                     'timestamp': datetime.utcnow().isoformat()
                 }
