@@ -32,7 +32,6 @@ COPY lambda_functions/shared /app/lambda_functions/shared
 # Copy Lambda function code
 COPY lambda_functions/stock_recommendations_api.py /app/lambda_functions/
 COPY lambda_functions/dual_prediction_reporting_api.py /app/lambda_functions/
-COPY lambda_functions/custom_stock_request_api.py /app/lambda_functions/
 COPY lambda_functions/ml_inference_native.py /app/lambda_functions/
 COPY lambda_functions/price_prediction_model.py /app/lambda_functions/
 COPY lambda_functions/time_to_hit_predictor_slim.py /app/lambda_functions/

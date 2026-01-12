@@ -42,13 +42,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 try:
     from lambda_functions import stock_recommendations_api
     from lambda_functions import dual_prediction_reporting_api
-    from lambda_functions import custom_stock_request_api
     LAMBDA_FUNCTIONS_AVAILABLE = True
 except Exception as e:
     LAMBDA_FUNCTIONS_AVAILABLE = False
     stock_recommendations_api = None
     dual_prediction_reporting_api = None
-    custom_stock_request_api = None
     print(f"Warning: Lambda functions not fully available: {e}")
 
 # Import shared utilities
@@ -259,25 +257,14 @@ def analytics_detailed():
         logger.log_error(f"Error in detailed analytics endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-# Custom stock request endpoint
+# Custom stock request endpoint (disabled - module not available)
 @app.route('/custom-request', methods=['POST'])
 def custom_request():
-    """Process custom stock analysis request."""
-    if not LAMBDA_FUNCTIONS_AVAILABLE:
-        return jsonify({
-            'error': 'Lambda functions not available',
-            'message': 'Custom requests require full Lambda function support'
-        }), 503
-
-    event = convert_flask_to_lambda_event(request)
-    context = MockLambdaContext()
-
-    try:
-        lambda_response = custom_stock_request_api.lambda_handler(event, context)
-        return convert_lambda_to_flask_response(lambda_response)
-    except Exception as e:
-        logger.log_error(f"Error in custom request endpoint: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    """Process custom stock analysis request (not implemented on Railway)."""
+    return jsonify({
+        'error': 'Feature not available',
+        'message': 'Custom requests are not supported in Railway deployment'
+    }), 501
 
 
 # ============================================================
