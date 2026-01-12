@@ -1,5 +1,5 @@
-# Model Tuning Worker Service for Railway
-# Runs scheduled ML model optimization and hyperparameter tuning
+# Model Tuning Worker Service - Railway-native
+# No AWS dependencies - uses PostgreSQL for all data storage
 
 FROM python:3.11-slim
 
@@ -16,27 +16,23 @@ WORKDIR /app
 # Copy requirements
 COPY lambda_requirements/requirements_pandas.txt ./requirements.txt
 
-# Install Python dependencies with ML libraries
+# Install Python dependencies (no boto3 needed for Railway-native)
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir \
     schedule==1.2.0 \
-    boto3==1.34.0 \
     psycopg2-binary==2.9.9 \
     python-dotenv==1.0.0 \
-    scikit-learn==1.4.0 \
-    xgboost==2.0.3 \
-    lightgbm==4.1.0
+    pytz==2024.1 \
+    yfinance==0.2.36 \
+    scikit-learn==1.4.0
 
-# Copy shared utilities
+# Copy shared utilities (database, error handling, accuracy tracking)
 COPY lambda_functions/shared /app/lambda_functions/shared
 
-# Copy Lambda function code
-COPY lambda_functions/price_model_tuning.py /app/lambda_functions/
-COPY lambda_functions/time_model_tuning.py /app/lambda_functions/
-COPY lambda_functions/model_tuning_reporter.py /app/lambda_functions/
-COPY lambda_functions/dual_accuracy_tracker.py /app/lambda_functions/
+# Copy Railway-native services
+COPY railway/services /app/services
 
-# Copy worker wrapper
+# Copy worker
 COPY railway/model-tuning/worker.py /app/
 
 # Set Python path

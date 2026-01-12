@@ -1,6 +1,6 @@
 """
-Flask application wrapper for Stock Analytics Engine Lambda functions.
-Converts AWS Lambda functions to REST API endpoints for Railway deployment.
+Flask API for Stock Analytics Engine - Railway-native implementation.
+No AWS dependencies - uses PostgreSQL for all data storage.
 
 Endpoints:
     Core:
@@ -8,13 +8,11 @@ Endpoints:
         GET  /health                     - Health check
         GET  /recommendations            - All stock recommendations
         GET  /recommendations/{symbol}   - Single symbol recommendation
-        POST /custom-request             - Custom analysis
+        GET  /predictions/price          - Price predictions
+        GET  /predictions/time           - Time-to-hit predictions
+        GET  /predictions/dashboard      - Predictions dashboard
 
-    Analytics (Legacy):
-        GET  /analytics/dashboard        - Analytics dashboard
-        GET  /analytics/detailed         - Detailed analytics
-
-    Accuracy Tracking (New):
+    Accuracy Tracking:
         GET  /analytics/calibration      - Confidence calibration report
         GET  /analytics/symbols          - Symbol-level accuracy rankings
         GET  /analytics/symbols/{symbol} - Specific symbol performance
@@ -26,34 +24,21 @@ Endpoints:
 
 import os
 import sys
-import json
 from flask import Flask, request, jsonify
 from datetime import datetime
 
-# Set AWS region for boto3 compatibility (even though we use PostgreSQL on Railway)
-# This prevents import errors from Lambda functions that still have boto3 imports
-os.environ.setdefault('AWS_DEFAULT_REGION', 'us-east-1')
-os.environ.setdefault('AWS_REGION', 'us-east-1')
-
-# Add lambda_functions to path
+# Add paths for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-# Import Lambda function handlers with error handling for Railway compatibility
-try:
-    from lambda_functions import stock_recommendations_api
-    from lambda_functions import dual_prediction_reporting_api
-    LAMBDA_FUNCTIONS_AVAILABLE = True
-except Exception as e:
-    LAMBDA_FUNCTIONS_AVAILABLE = False
-    stock_recommendations_api = None
-    dual_prediction_reporting_api = None
-    print(f"Warning: Lambda functions not fully available: {e}")
+# Import Railway-native services (no AWS dependencies)
+from services.recommendations import RecommendationsService, get_service as get_recommendations_service
+from services.predictions import PredictionsService, get_service as get_predictions_service
 
 # Import shared utilities
-from lambda_functions.shared.lambda_utils import LambdaResponse
 from lambda_functions.shared.error_handling import StructuredLogger
 
-# Import accuracy tracking modules (these use PostgreSQL, fully Railway-compatible)
+# Import accuracy tracking modules (PostgreSQL-based)
 from lambda_functions.shared.accuracy_tracking import (
     ConfidenceCalibrationTracker,
     SymbolAccuracyAggregator,
@@ -69,62 +54,11 @@ from lambda_functions.shared.database import db, is_database_available
 app = Flask(__name__)
 logger = StructuredLogger(__name__)
 
-# Mock Lambda context for compatibility
-class MockLambdaContext:
-    def __init__(self):
-        self.function_name = "railway-api-service"
-        self.memory_limit_in_mb = 2048
-        self.invoked_function_arn = "arn:aws:lambda:railway:api-service"
-        self.aws_request_id = None
 
-    def get_remaining_time_in_millis(self):
-        return 300000  # 5 minutes
+# ============================================================
+# CORE ENDPOINTS
+# ============================================================
 
-def convert_flask_to_lambda_event(request_obj, path_params=None):
-    """Convert Flask request to AWS Lambda event format."""
-    event = {
-        'httpMethod': request_obj.method,
-        'path': request_obj.path,
-        'headers': dict(request_obj.headers),
-        'queryStringParameters': dict(request_obj.args) if request_obj.args else None,
-        'pathParameters': path_params,
-        'body': request_obj.get_data(as_text=True) if request_obj.data else None,
-        'isBase64Encoded': False,
-        'requestContext': {
-            'requestId': request_obj.environ.get('REQUEST_ID', 'railway-request'),
-            'identity': {
-                'sourceIp': request_obj.remote_addr
-            }
-        }
-    }
-    return event
-
-def convert_lambda_to_flask_response(lambda_response):
-    """Convert AWS Lambda response to Flask response."""
-    if isinstance(lambda_response, dict):
-        status_code = lambda_response.get('statusCode', 200)
-        body = lambda_response.get('body', '{}')
-        headers = lambda_response.get('headers', {})
-
-        # Parse body if it's a string
-        if isinstance(body, str):
-            try:
-                body = json.loads(body)
-            except json.JSONDecodeError:
-                pass
-
-        response = jsonify(body)
-        response.status_code = status_code
-
-        # Add headers
-        for key, value in headers.items():
-            response.headers[key] = value
-
-        return response
-    else:
-        return jsonify({'error': 'Invalid response format'}), 500
-
-# Health check endpoint
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint for Railway."""
@@ -132,11 +66,12 @@ def health():
         'status': 'healthy',
         'service': 'stock-analytics-api',
         'timestamp': datetime.utcnow().isoformat(),
-        'version': '2.0.0',
+        'version': '3.0.0-railway',
+        'platform': 'Railway',
         'database': 'not_configured'
     }
 
-    # Check database health if available
+    # Check database health
     if is_database_available():
         try:
             db_health = db.health_check()
@@ -149,122 +84,183 @@ def health():
     return jsonify(status), 200
 
 
-# Root endpoint
 @app.route('/', methods=['GET'])
 def root():
     """Root endpoint with API information."""
     return jsonify({
         'service': 'Stock Analytics Engine API',
-        'version': '2.0.0',
-        'platform': 'Railway',
+        'version': '3.0.0-railway',
+        'platform': 'Railway (PostgreSQL)',
+        'aws_dependencies': False,
         'endpoints': {
             'core': {
+                'health': '/health',
                 'recommendations': '/recommendations',
                 'recommendations_by_symbol': '/recommendations/{symbol}',
-                'custom_request': '/custom-request'
+                'price_predictions': '/predictions/price',
+                'time_predictions': '/predictions/time',
+                'predictions_dashboard': '/predictions/dashboard'
             },
             'analytics': {
-                'dashboard': '/analytics/dashboard',
-                'detailed': '/analytics/detailed',
                 'calibration': '/analytics/calibration',
                 'symbols': '/analytics/symbols',
                 'symbol_detail': '/analytics/symbols/{symbol}',
                 'deployment_gates': '/analytics/deployment-gates',
                 'error_distribution': '/analytics/error-distribution',
                 'audit_trail': '/analytics/audit-trail',
-                'market_correlation': '/analytics/market-correlation'
+                'market_correlation': '/analytics/market-correlation',
+                'retraining_candidates': '/analytics/retraining-candidates'
             }
-        },
-        'documentation': 'https://github.com/your-repo/stock-analytics-engine'
+        }
     }), 200
 
-# Stock recommendations endpoints
+
+# ============================================================
+# RECOMMENDATIONS ENDPOINTS (Railway-native)
+# ============================================================
+
 @app.route('/recommendations', methods=['GET'])
 def get_recommendations():
     """Get all stock recommendations."""
-    if not LAMBDA_FUNCTIONS_AVAILABLE:
-        return jsonify({
-            'error': 'Lambda functions not available',
-            'message': 'Use /analytics endpoints for PostgreSQL-based data'
-        }), 503
-
-    event = convert_flask_to_lambda_event(request)
-    context = MockLambdaContext()
-
     try:
-        lambda_response = stock_recommendations_api.lambda_handler(event, context)
-        return convert_lambda_to_flask_response(lambda_response)
+        limit = request.args.get('limit', 100, type=int)
+        service = get_recommendations_service()
+        result = service.get_all_recommendations(limit=limit)
+
+        if result['success']:
+            return jsonify(result), 200
+        return jsonify(result), 500
+
     except Exception as e:
-        logger.log_error(f"Error in recommendations endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'get_recommendations'})
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/recommendations/<symbol>', methods=['GET'])
 def get_recommendation_by_symbol(symbol):
     """Get recommendation for specific stock symbol."""
-    if not LAMBDA_FUNCTIONS_AVAILABLE:
-        return jsonify({
-            'error': 'Lambda functions not available',
-            'message': 'Use /analytics endpoints for PostgreSQL-based data'
-        }), 503
-
-    event = convert_flask_to_lambda_event(request, path_params={'symbol': symbol.upper()})
-    context = MockLambdaContext()
-
     try:
-        lambda_response = stock_recommendations_api.lambda_handler(event, context)
-        return convert_lambda_to_flask_response(lambda_response)
+        service = get_recommendations_service()
+        result = service.get_recommendation_by_symbol(symbol.upper())
+
+        if result['success']:
+            return jsonify(result), 200
+        return jsonify(result), 404
+
     except Exception as e:
-        logger.log_error(f"Error in recommendation by symbol endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'get_recommendation_by_symbol', 'symbol': symbol})
         return jsonify({'error': str(e)}), 500
 
-# Analytics endpoints
-@app.route('/analytics/dashboard', methods=['GET'])
-def analytics_dashboard():
-    """Get analytics dashboard data."""
-    if not LAMBDA_FUNCTIONS_AVAILABLE:
-        return jsonify({
-            'error': 'Legacy analytics not available',
-            'message': 'Use /analytics/calibration, /analytics/symbols, etc. for PostgreSQL-based analytics'
-        }), 503
 
-    event = convert_flask_to_lambda_event(request)
-    context = MockLambdaContext()
-
+@app.route('/recommendations/buy', methods=['GET'])
+def get_buy_recommendations():
+    """Get all BUY recommendations."""
     try:
-        lambda_response = dual_prediction_reporting_api.lambda_handler(event, context)
-        return convert_lambda_to_flask_response(lambda_response)
+        limit = request.args.get('limit', 50, type=int)
+        service = get_recommendations_service()
+        result = service.get_recommendations_by_type('BUY', limit=limit)
+        return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in analytics dashboard endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'get_buy_recommendations'})
         return jsonify({'error': str(e)}), 500
 
-@app.route('/analytics/detailed', methods=['GET'])
-def analytics_detailed():
-    """Get detailed analytics data."""
-    if not LAMBDA_FUNCTIONS_AVAILABLE:
-        return jsonify({
-            'error': 'Legacy analytics not available',
-            'message': 'Use /analytics/calibration, /analytics/symbols, etc. for PostgreSQL-based analytics'
-        }), 503
 
-    event = convert_flask_to_lambda_event(request)
-    event['path'] = '/analytics/detailed'  # Update path for routing
-    context = MockLambdaContext()
-
+@app.route('/recommendations/sell', methods=['GET'])
+def get_sell_recommendations():
+    """Get all SELL recommendations."""
     try:
-        lambda_response = dual_prediction_reporting_api.lambda_handler(event, context)
-        return convert_lambda_to_flask_response(lambda_response)
+        limit = request.args.get('limit', 50, type=int)
+        service = get_recommendations_service()
+        result = service.get_recommendations_by_type('SELL', limit=limit)
+        return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in detailed analytics endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'get_sell_recommendations'})
         return jsonify({'error': str(e)}), 500
 
-# Custom stock request endpoint (disabled - module not available)
-@app.route('/custom-request', methods=['POST'])
-def custom_request():
-    """Process custom stock analysis request (not implemented on Railway)."""
-    return jsonify({
-        'error': 'Feature not available',
-        'message': 'Custom requests are not supported in Railway deployment'
-    }), 501
+
+@app.route('/recommendations/high-confidence', methods=['GET'])
+def get_high_confidence_recommendations():
+    """Get high confidence recommendations."""
+    try:
+        min_confidence = request.args.get('min_confidence', 0.7, type=float)
+        limit = request.args.get('limit', 20, type=int)
+        service = get_recommendations_service()
+        result = service.get_high_confidence_recommendations(
+            min_confidence=min_confidence,
+            limit=limit
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        logger.log_error(e, context={'endpoint': 'get_high_confidence_recommendations'})
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# PREDICTIONS ENDPOINTS (Railway-native)
+# ============================================================
+
+@app.route('/predictions/price', methods=['GET'])
+def get_price_predictions():
+    """Get price predictions."""
+    try:
+        symbol = request.args.get('symbol')
+        status = request.args.get('status')
+        limit = request.args.get('limit', 100, type=int)
+
+        service = get_predictions_service()
+        result = service.get_price_predictions(
+            symbol=symbol,
+            status=status,
+            limit=limit
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        logger.log_error(e, context={'endpoint': 'get_price_predictions'})
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/predictions/time', methods=['GET'])
+def get_time_predictions():
+    """Get time-to-hit predictions."""
+    try:
+        symbol = request.args.get('symbol')
+        status = request.args.get('status')
+        limit = request.args.get('limit', 100, type=int)
+
+        service = get_predictions_service()
+        result = service.get_time_predictions(
+            symbol=symbol,
+            status=status,
+            limit=limit
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        logger.log_error(e, context={'endpoint': 'get_time_predictions'})
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/predictions/pending', methods=['GET'])
+def get_pending_validations():
+    """Get predictions pending validation."""
+    try:
+        service = get_predictions_service()
+        result = service.get_pending_validations()
+        return jsonify(result), 200
+    except Exception as e:
+        logger.log_error(e, context={'endpoint': 'get_pending_validations'})
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/predictions/dashboard', methods=['GET'])
+def predictions_dashboard():
+    """Get predictions analytics dashboard."""
+    try:
+        service = get_predictions_service()
+        result = service.get_analytics_dashboard()
+        return jsonify(result), 200
+    except Exception as e:
+        logger.log_error(e, context={'endpoint': 'predictions_dashboard'})
+        return jsonify({'error': str(e)}), 500
 
 
 # ============================================================
@@ -283,7 +279,7 @@ def analytics_calibration():
 
         return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in calibration endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_calibration'})
         return jsonify({'error': str(e)}), 500
 
 
@@ -299,7 +295,7 @@ def analytics_symbols():
 
         return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in symbols endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_symbols'})
         return jsonify({'error': str(e)}), 500
 
 
@@ -314,7 +310,7 @@ def analytics_symbol_detail(symbol):
 
         return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in symbol detail endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_symbol_detail', 'symbol': symbol})
         return jsonify({'error': str(e)}), 500
 
 
@@ -330,39 +326,7 @@ def analytics_deployment_gates():
 
         return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in deployment gates endpoint: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/analytics/deployment-gates/latest', methods=['GET'])
-def analytics_latest_gate():
-    """Get latest deployment gate status."""
-    try:
-        model_type = request.args.get('model_type', 'price_prediction')
-
-        gate = DeploymentGate()
-        result = gate.get_latest_gate(model_type=model_type)
-
-        if result:
-            return jsonify(result), 200
-        return jsonify({'error': 'No gate data available'}), 404
-    except Exception as e:
-        logger.log_error(f"Error in latest gate endpoint: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/analytics/deployment-gates/statistics', methods=['GET'])
-def analytics_gate_statistics():
-    """Get deployment gate statistics."""
-    try:
-        lookback_days = request.args.get('lookback_days', 30, type=int)
-
-        gate = DeploymentGate()
-        result = gate.get_gate_statistics(lookback_days=lookback_days)
-
-        return jsonify(result), 200
-    except Exception as e:
-        logger.log_error(f"Error in gate statistics endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_deployment_gates'})
         return jsonify({'error': str(e)}), 500
 
 
@@ -377,23 +341,7 @@ def analytics_error_distribution():
 
         return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in error distribution endpoint: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/analytics/error-distribution/trend', methods=['GET'])
-def analytics_error_trend():
-    """Get error distribution trend."""
-    try:
-        model_type = request.args.get('model_type', 'price_prediction')
-        days = request.args.get('days', 14, type=int)
-
-        analyzer = ErrorDistributionAnalyzer()
-        result = analyzer.get_error_trend(model_type=model_type, days=days)
-
-        return jsonify(result), 200
-    except Exception as e:
-        logger.log_error(f"Error in error trend endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_error_distribution'})
         return jsonify({'error': str(e)}), 500
 
 
@@ -418,26 +366,7 @@ def analytics_audit_trail():
 
         return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in audit trail endpoint: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/analytics/audit-trail/verify', methods=['GET'])
-def analytics_verify_claim():
-    """Verify historical accuracy claim."""
-    try:
-        timestamp = request.args.get('timestamp')
-        model_type = request.args.get('model_type', 'price_prediction')
-
-        if not timestamp:
-            return jsonify({'error': 'timestamp parameter required'}), 400
-
-        audit_logger = AccuracyAuditLogger()
-        result = audit_logger.verify_historical_claim(timestamp, model_type)
-
-        return jsonify(result), 200
-    except Exception as e:
-        logger.log_error(f"Error in verify claim endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_audit_trail'})
         return jsonify({'error': str(e)}), 500
 
 
@@ -452,7 +381,7 @@ def analytics_market_correlation():
 
         return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in market correlation endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_market_correlation'})
         return jsonify({'error': str(e)}), 500
 
 
@@ -465,22 +394,7 @@ def analytics_market_conditions():
 
         return jsonify(result), 200
     except Exception as e:
-        logger.log_error(f"Error in market conditions endpoint: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/analytics/market-conditions/history', methods=['GET'])
-def analytics_market_history():
-    """Get market regime history."""
-    try:
-        days = request.args.get('days', 30, type=int)
-
-        tracker = MarketConditionTracker()
-        result = tracker.get_regime_history(days=days)
-
-        return jsonify({'history': result, 'days': days}), 200
-    except Exception as e:
-        logger.log_error(f"Error in market history endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_market_conditions'})
         return jsonify({'error': str(e)}), 500
 
 
@@ -500,23 +414,27 @@ def analytics_retraining_candidates():
             'timestamp': datetime.utcnow().isoformat()
         }), 200
     except Exception as e:
-        logger.log_error(f"Error in retraining candidates endpoint: {str(e)}")
+        logger.log_error(e, context={'endpoint': 'analytics_retraining_candidates'})
         return jsonify({'error': str(e)}), 500
 
 
-# Error handlers
+# ============================================================
+# ERROR HANDLERS
+# ============================================================
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'error': 'Endpoint not found'}), 404
 
 @app.errorhandler(500)
 def internal_error(error):
-    logger.log_error(f"Internal server error: {str(error)}")
+    logger.log_error(Exception(str(error)), context={'handler': '500_error'})
     return jsonify({'error': 'Internal server error'}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
-    logger.log_info(f"Starting Stock Analytics API on port {port}")
+    logger.log_info(f"Starting Stock Analytics API (Railway-native) on port {port}")
     app.run(host='0.0.0.0', port=port, debug=debug)
