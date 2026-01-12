@@ -22,7 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     schedule==1.2.0 \
     boto3==1.34.0 \
     psycopg2-binary==2.9.9 \
-    python-dotenv==1.0.0
+    python-dotenv==1.0.0 \
+    opentelemetry-api==1.21.0 \
+    opentelemetry-sdk==1.21.0
 
 # Copy shared utilities
 COPY lambda_functions/shared /app/lambda_functions/shared
