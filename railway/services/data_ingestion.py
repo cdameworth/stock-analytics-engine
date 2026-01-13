@@ -157,10 +157,10 @@ class DataIngestionService:
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables
                     WHERE table_name = 'stock_quotes'
-                )
+                ) as table_exists
             """)
 
-            if result and result[0]:
+            if result and result.get('table_exists'):
                 # Use stock_quotes table
                 db.execute("""
                     INSERT INTO stock_quotes (
