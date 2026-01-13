@@ -1,7 +1,7 @@
-# Multi-stage build for Stock Analytics Engine API Service
-# Combines multiple Lambda functions into a unified REST API for Railway deployment
+# Stock Analytics Engine API Service - Railway-native
+# No AWS dependencies - uses PostgreSQL for all data storage
 
-FROM python:3.11-slim AS base
+FROM python:3.11-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -18,25 +18,22 @@ WORKDIR /app
 COPY lambda_requirements/requirements_pandas.txt ./requirements.txt
 
 # Install Python dependencies
+# Note: boto3 included for shared utility imports (not used at runtime)
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir \
     flask==3.0.0 \
     gunicorn==21.2.0 \
-    boto3==1.34.0 \
-    python-dotenv==1.0.0
+    psycopg2-binary==2.9.9 \
+    python-dotenv==1.0.0 \
+    boto3==1.34.0
 
-# Copy shared utilities first (for better caching)
+# Copy shared utilities (database, error handling, accuracy tracking)
 COPY lambda_functions/shared /app/lambda_functions/shared
 
-# Copy Lambda function code
-COPY lambda_functions/stock_recommendations_api.py /app/lambda_functions/
-COPY lambda_functions/dual_prediction_reporting_api.py /app/lambda_functions/
-COPY lambda_functions/custom_stock_request_api.py /app/lambda_functions/
-COPY lambda_functions/ml_inference_native.py /app/lambda_functions/
-COPY lambda_functions/price_prediction_model.py /app/lambda_functions/
-COPY lambda_functions/time_to_hit_predictor_slim.py /app/lambda_functions/
+# Copy Railway-native services
+COPY railway/services /app/services
 
-# Copy Flask wrapper
+# Copy Flask application
 COPY railway/api-service/app.py /app/
 
 # Set Python path
