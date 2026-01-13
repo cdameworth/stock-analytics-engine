@@ -1,5 +1,5 @@
-# Stock Analytics Engine API Service for Railway
-# Railway-native implementation using PostgreSQL (no AWS dependencies)
+# Stock Analytics Engine API Service - Railway-native
+# No AWS dependencies - uses PostgreSQL for all data storage
 
 FROM python:3.11-slim
 
