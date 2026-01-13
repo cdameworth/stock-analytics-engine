@@ -1,5 +1,5 @@
 # Data Ingestion Worker Service for Railway
-# Runs scheduled data collection from Alpha Vantage API
+# Railway-native implementation using PostgreSQL (no AWS dependencies)
 
 FROM python:3.11-slim
 
@@ -13,24 +13,19 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy requirements
-COPY lambda_requirements/requirements_pandas.txt ./requirements.txt
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir \
+# Install Python dependencies (minimal, no AWS)
+RUN pip install --no-cache-dir \
     schedule==1.2.0 \
-    boto3==1.34.0 \
+    psycopg2-binary==2.9.9 \
+    redis==5.0.1 \
+    pytz==2024.1 \
     python-dotenv==1.0.0
 
-# Copy shared utilities
-COPY lambda_functions/shared /app/lambda_functions/shared
+# Copy Railway shared utilities
+COPY railway/shared /app/shared
 
-# Copy Lambda function code
-COPY lambda_functions/stock_data_ingestion.py /app/lambda_functions/
-
-# Copy worker wrapper
-COPY railway/data-ingestion/worker.py /app/
+# Copy Railway-native worker
+COPY railway/data-ingestion/worker_native.py /app/worker.py
 
 # Set Python path
 ENV PYTHONPATH=/app:$PYTHONPATH
