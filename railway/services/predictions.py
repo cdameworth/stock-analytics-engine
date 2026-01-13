@@ -70,16 +70,16 @@ class PredictionsService:
             predictions = []
             for row in rows:
                 predictions.append({
-                    'id': str(row[0]) if row[0] else None,
-                    'symbol': row[1],
-                    'predicted_price': float(row[2]) if row[2] else None,
-                    'confidence_score': float(row[3]) if row[3] else None,
-                    'validation_status': row[4],
-                    'prediction_date': row[5].isoformat() if row[5] else None,
-                    'validation_date': row[6].isoformat() if row[6] else None,
-                    'actual_price': float(row[7]) if row[7] else None,
-                    'accuracy_pct': float(row[8]) if row[8] else None,
-                    'validated_at': row[9].isoformat() if row[9] else None
+                    'id': str(row['id']) if row.get('id') else None,
+                    'symbol': row.get('symbol'),
+                    'predicted_price': float(row['predicted_price']) if row.get('predicted_price') else None,
+                    'confidence_score': float(row['confidence']) if row.get('confidence') else None,
+                    'validation_status': row.get('validation_status'),
+                    'prediction_date': row['timestamp'].isoformat() if row.get('timestamp') else None,
+                    'validation_date': row['validation_date'].isoformat() if row.get('validation_date') else None,
+                    'actual_price': float(row['actual_price']) if row.get('actual_price') else None,
+                    'accuracy_pct': float(row['accuracy_pct']) if row.get('accuracy_pct') else None,
+                    'validated_at': row['validated_at'].isoformat() if row.get('validated_at') else None
                 })
 
             return {
@@ -146,17 +146,17 @@ class PredictionsService:
             predictions = []
             for row in rows:
                 predictions.append({
-                    'id': str(row[0]) if row[0] else None,
-                    'symbol': row[1],
-                    'target_price': float(row[2]) if row[2] else None,
-                    'predicted_days': row[3],
-                    'confidence_score': float(row[4]) if row[4] else None,
-                    'prediction_date': row[5].isoformat() if row[5] else None,
-                    'expected_hit_date': row[6].isoformat() if row[6] else None,
-                    'validation_status': row[7],
-                    'actual_days': row[8],
-                    'accuracy_pct': float(row[9]) if row[9] else None,
-                    'validated_at': row[10].isoformat() if row[10] else None
+                    'id': str(row['id']) if row.get('id') else None,
+                    'symbol': row.get('symbol'),
+                    'target_price': float(row['target_price']) if row.get('target_price') else None,
+                    'predicted_days': row.get('predicted_days'),
+                    'confidence_score': float(row['confidence_score']) if row.get('confidence_score') else None,
+                    'prediction_date': row['prediction_date'].isoformat() if row.get('prediction_date') else None,
+                    'expected_hit_date': row['expected_hit_date'].isoformat() if row.get('expected_hit_date') else None,
+                    'validation_status': row.get('validation_status'),
+                    'actual_days': row.get('actual_days'),
+                    'accuracy_pct': float(row['accuracy_pct']) if row.get('accuracy_pct') else None,
+                    'validated_at': row['validated_at'].isoformat() if row.get('validated_at') else None
                 })
 
             return {
@@ -296,12 +296,12 @@ class PredictionsService:
             price_predictions = []
             for row in price_rows:
                 price_predictions.append({
-                    'id': str(row[0]),
-                    'symbol': row[1],
-                    'predicted_price': float(row[2]) if row[2] else None,
-                    'confidence_score': float(row[3]) if row[3] else None,
-                    'prediction_date': row[4].isoformat() if row[4] else None,
-                    'validation_date': row[5].isoformat() if row[5] else None
+                    'id': str(row['id']),
+                    'symbol': row['symbol'],
+                    'predicted_price': float(row['predicted_price']) if row.get('predicted_price') else None,
+                    'confidence_score': float(row['confidence_score']) if row.get('confidence_score') else None,
+                    'prediction_date': row['prediction_date'].isoformat() if row.get('prediction_date') else None,
+                    'validation_date': row['validation_date'].isoformat() if row.get('validation_date') else None
                 })
 
             # Time predictions due for validation
@@ -319,13 +319,13 @@ class PredictionsService:
             time_predictions = []
             for row in time_rows:
                 time_predictions.append({
-                    'id': str(row[0]),
-                    'symbol': row[1],
-                    'target_price': float(row[2]) if row[2] else None,
-                    'predicted_days': row[3],
-                    'confidence_score': float(row[4]) if row[4] else None,
-                    'prediction_date': row[5].isoformat() if row[5] else None,
-                    'expected_hit_date': row[6].isoformat() if row[6] else None
+                    'id': str(row['id']),
+                    'symbol': row['symbol'],
+                    'target_price': float(row['target_price']) if row.get('target_price') else None,
+                    'predicted_days': row.get('predicted_days'),
+                    'confidence_score': float(row['confidence_score']) if row.get('confidence_score') else None,
+                    'prediction_date': row['prediction_date'].isoformat() if row.get('prediction_date') else None,
+                    'expected_hit_date': row['expected_hit_date'].isoformat() if row.get('expected_hit_date') else None
                 })
 
             return {
@@ -372,7 +372,7 @@ class PredictionsService:
                     'error': f'Prediction {prediction_id} not found'
                 }
 
-            predicted_price = float(row[0])
+            predicted_price = float(row['predicted_price'])
 
             # Calculate accuracy
             error = abs(actual_price - predicted_price)
@@ -459,19 +459,19 @@ class PredictionsService:
 
             bucket_stats = {}
             for row in buckets:
-                bucket_stats[row[0]] = {
-                    'count': row[1],
-                    'avg_accuracy': float(row[2]) if row[2] else None
+                bucket_stats[row['bucket']] = {
+                    'count': row['count'],
+                    'avg_accuracy': float(row['avg_accuracy']) if row.get('avg_accuracy') else None
                 }
 
             return {
                 'success': True,
                 'period': '30 days',
-                'total_predictions': stats[0] if stats else 0,
-                'validated_predictions': stats[1] if stats else 0,
-                'pending_predictions': stats[2] if stats else 0,
-                'avg_accuracy': float(stats[3]) if stats and stats[3] else None,
-                'avg_confidence': float(stats[4]) if stats and stats[4] else None,
+                'total_predictions': stats['total'] if stats else 0,
+                'validated_predictions': stats['validated'] if stats else 0,
+                'pending_predictions': stats['pending'] if stats else 0,
+                'avg_accuracy': float(stats['avg_accuracy']) if stats and stats.get('avg_accuracy') else None,
+                'avg_confidence': float(stats['avg_confidence']) if stats and stats.get('avg_confidence') else None,
                 'accuracy_by_confidence': bucket_stats,
                 'timestamp': datetime.utcnow().isoformat()
             }

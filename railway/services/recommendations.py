@@ -52,15 +52,15 @@ class RecommendationsService:
             recommendations = []
             for row in rows:
                 recommendations.append({
-                    'symbol': row[0],
-                    'recommendation': row[1],
-                    'target_price': float(row[2]) if row[2] else None,
-                    'current_price': float(row[3]) if row[3] else None,
-                    'company_name': row[4],
-                    'confidence_score': float(row[5]) if row[5] else None,
-                    'analysis_summary': row[6],
-                    'created_at': row[7].isoformat() if row[7] else None,
-                    'updated_at': row[8].isoformat() if row[8] else None
+                    'symbol': row['symbol'],
+                    'recommendation': row['recommendation_type'],
+                    'target_price': float(row['target_price']) if row.get('target_price') else None,
+                    'current_price': float(row['current_price']) if row.get('current_price') else None,
+                    'company_name': row.get('company_name'),
+                    'confidence_score': float(row['confidence_score']) if row.get('confidence_score') else None,
+                    'analysis_summary': row.get('analysis_summary'),
+                    'created_at': row['created_at'].isoformat() if row.get('created_at') else None,
+                    'updated_at': row['updated_at'].isoformat() if row.get('updated_at') else None
                 })
 
             return {
@@ -109,15 +109,15 @@ class RecommendationsService:
                 return {
                     'success': True,
                     'recommendation': {
-                        'symbol': row[0],
-                        'recommendation': row[1],
-                        'target_price': float(row[2]) if row[2] else None,
-                        'current_price': float(row[3]) if row[3] else None,
-                        'company_name': row[4],
-                        'confidence_score': float(row[5]) if row[5] else None,
-                        'analysis_summary': row[6],
-                        'created_at': row[7].isoformat() if row[7] else None,
-                        'updated_at': row[8].isoformat() if row[8] else None
+                        'symbol': row['symbol'],
+                        'recommendation': row['recommendation_type'],
+                        'target_price': float(row['target_price']) if row.get('target_price') else None,
+                        'current_price': float(row['current_price']) if row.get('current_price') else None,
+                        'company_name': row.get('company_name'),
+                        'confidence_score': float(row['confidence_score']) if row.get('confidence_score') else None,
+                        'analysis_summary': row.get('analysis_summary'),
+                        'created_at': row['created_at'].isoformat() if row.get('created_at') else None,
+                        'updated_at': row['updated_at'].isoformat() if row.get('updated_at') else None
                     },
                     'timestamp': datetime.utcnow().isoformat()
                 }
@@ -237,14 +237,14 @@ class RecommendationsService:
             recommendations = []
             for row in rows:
                 recommendations.append({
-                    'symbol': row[0],
-                    'recommendation': row[1],
-                    'target_price': float(row[2]) if row[2] else None,
-                    'current_price': float(row[3]) if row[3] else None,
-                    'company_name': row[4],
-                    'confidence_score': float(row[5]) if row[5] else None,
-                    'analysis_summary': row[6],
-                    'created_at': row[7].isoformat() if row[7] else None
+                    'symbol': row['symbol'],
+                    'recommendation': row['recommendation_type'],
+                    'target_price': float(row['target_price']) if row.get('target_price') else None,
+                    'current_price': float(row['current_price']) if row.get('current_price') else None,
+                    'company_name': row.get('company_name'),
+                    'confidence_score': float(row['confidence_score']) if row.get('confidence_score') else None,
+                    'analysis_summary': row.get('analysis_summary'),
+                    'created_at': row['created_at'].isoformat() if row.get('created_at') else None
                 })
 
             return {
@@ -297,14 +297,14 @@ class RecommendationsService:
             recommendations = []
             for row in rows:
                 recommendations.append({
-                    'symbol': row[0],
-                    'recommendation': row[1],
-                    'target_price': float(row[2]) if row[2] else None,
-                    'current_price': float(row[3]) if row[3] else None,
-                    'company_name': row[4],
-                    'confidence_score': float(row[5]) if row[5] else None,
-                    'analysis_summary': row[6],
-                    'created_at': row[7].isoformat() if row[7] else None
+                    'symbol': row['symbol'],
+                    'recommendation': row['recommendation_type'],
+                    'target_price': float(row['target_price']) if row.get('target_price') else None,
+                    'current_price': float(row['current_price']) if row.get('current_price') else None,
+                    'company_name': row.get('company_name'),
+                    'confidence_score': float(row['confidence_score']) if row.get('confidence_score') else None,
+                    'analysis_summary': row.get('analysis_summary'),
+                    'created_at': row['created_at'].isoformat() if row.get('created_at') else None
                 })
 
             return {
