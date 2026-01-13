@@ -1,5 +1,5 @@
-# Model Tuning Worker Service - Railway-native
-# No AWS dependencies - uses PostgreSQL for all data storage
+# Model Tuning Worker Service for Railway
+# Railway-native implementation using PostgreSQL (no AWS dependencies)
 
 FROM python:3.11-slim
 
@@ -13,29 +13,19 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy requirements
-COPY lambda_requirements/requirements_pandas.txt ./requirements.txt
-
-# Install Python dependencies
-# Note: boto3 included for shared utility imports (not used at runtime)
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir \
+# Install Python dependencies (minimal, no AWS)
+RUN pip install --no-cache-dir \
     schedule==1.2.0 \
     psycopg2-binary==2.9.9 \
-    python-dotenv==1.0.0 \
+    redis==5.0.1 \
     pytz==2024.1 \
-    yfinance==0.2.36 \
-    scikit-learn==1.4.0 \
-    boto3==1.34.0
+    python-dotenv==1.0.0
 
-# Copy shared utilities (database, error handling, accuracy tracking)
-COPY lambda_functions/shared /app/lambda_functions/shared
+# Copy Railway shared utilities
+COPY railway/shared /app/shared
 
-# Copy Railway-native services
-COPY railway/services /app/services
-
-# Copy worker
-COPY railway/model-tuning/worker.py /app/
+# Copy Railway-native worker
+COPY railway/model-tuning/worker_native.py /app/worker.py
 
 # Set Python path
 ENV PYTHONPATH=/app:$PYTHONPATH

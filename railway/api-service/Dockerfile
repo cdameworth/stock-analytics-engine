@@ -11,30 +11,21 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements files
-COPY lambda_requirements/requirements_pandas.txt ./requirements.txt
-
-# Install Python dependencies
-# Note: boto3 included for shared utility imports (not used at runtime)
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir \
+# Install Python dependencies (minimal, no AWS)
+RUN pip install --no-cache-dir \
     flask==3.0.0 \
     gunicorn==21.2.0 \
     psycopg2-binary==2.9.9 \
-    python-dotenv==1.0.0 \
-    boto3==1.34.0
+    redis==5.0.1 \
+    python-dotenv==1.0.0
 
-# Copy shared utilities (database, error handling, accuracy tracking)
-COPY lambda_functions/shared /app/lambda_functions/shared
+# Copy Railway shared utilities
+COPY railway/shared /app/shared
 
-# Copy Railway-native services
-COPY railway/services /app/services
-
-# Copy Flask application
-COPY railway/api-service/app.py /app/
+# Copy Railway-native Flask app
+COPY railway/api-service/app_native.py /app/app.py
 
 # Set Python path
 ENV PYTHONPATH=/app:$PYTHONPATH
