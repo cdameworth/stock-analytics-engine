@@ -117,18 +117,19 @@ def get_predictions_to_validate(lookback_days=7):
     try:
         with db_conn.cursor() as cur:
             # Get recommendations from N days ago that haven't been validated
+            # Uses recommendation_type column to match existing database schema
             cur.execute("""
-                SELECT r.symbol, r.recommendation, r.confidence, r.target_price,
-                       r.current_price, r.updated_at
+                SELECT r.symbol, r.recommendation_type as recommendation, r.confidence, r.target_price,
+                       r.current_price, r.timestamp as updated_at
                 FROM stock_recommendations r
-                WHERE r.updated_at < NOW() - INTERVAL '%s days'
-                AND r.updated_at > NOW() - INTERVAL '%s days'
+                WHERE r.timestamp < NOW() - INTERVAL '%s days'
+                AND r.timestamp > NOW() - INTERVAL '%s days'
                 AND NOT EXISTS (
                     SELECT 1 FROM prediction_validations pv
                     WHERE pv.symbol = r.symbol
-                    AND pv.prediction_date = r.updated_at::date
+                    AND pv.prediction_date = r.timestamp::date
                 )
-                ORDER BY r.updated_at DESC
+                ORDER BY r.timestamp DESC
                 LIMIT 100
             """, (lookback_days - 2, lookback_days + 5))
 
