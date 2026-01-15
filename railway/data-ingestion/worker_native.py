@@ -71,28 +71,28 @@ def init_database():
         db_conn.autocommit = True
 
         # Create tables if they don't exist
+        # Note: Uses trading_day column to match existing Railway database schema
         with db_conn.cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS stock_quotes (
                     id SERIAL PRIMARY KEY,
                     symbol VARCHAR(10) NOT NULL,
-                    date DATE NOT NULL,
-                    open_price DECIMAL(12,4),
-                    high_price DECIMAL(12,4),
-                    low_price DECIMAL(12,4),
-                    close_price DECIMAL(12,4),
+                    price DECIMAL(10, 2) NOT NULL,
+                    open_price DECIMAL(10, 2),
+                    high_price DECIMAL(10, 2),
+                    low_price DECIMAL(10, 2),
                     volume BIGINT,
-                    moving_avg_5 DECIMAL(12,4),
-                    moving_avg_20 DECIMAL(12,4),
-                    volatility DECIMAL(12,6),
-                    data_quality VARCHAR(20),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(symbol, date)
+                    previous_close DECIMAL(10, 2),
+                    change_amount DECIMAL(10, 2),
+                    change_percent DECIMAL(6, 2),
+                    trading_day DATE,
+                    fetched_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    UNIQUE(symbol, trading_day)
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_stock_quotes_symbol ON stock_quotes(symbol);
-                CREATE INDEX IF NOT EXISTS idx_stock_quotes_date ON stock_quotes(date DESC);
-                CREATE INDEX IF NOT EXISTS idx_stock_quotes_symbol_date ON stock_quotes(symbol, date DESC);
+                CREATE INDEX IF NOT EXISTS idx_stock_quotes_trading_day ON stock_quotes(trading_day DESC);
             """)
 
             cur.execute("""
@@ -274,30 +274,32 @@ def process_stock_data(symbol, raw_data):
         latest_date = dates[0]
         latest = ts[latest_date]
 
-        # Calculate metrics
-        prices = [float(ts[d]['4. close']) for d in dates[:20]]
-        moving_avg_5 = sum(prices[:5]) / 5 if len(prices) >= 5 else prices[0]
-        moving_avg_20 = sum(prices) / len(prices)
+        # Get current and previous close
+        close_price = float(latest['4. close'])
+        open_price = float(latest['1. open'])
 
-        if len(prices) > 1:
-            returns = [(prices[i] - prices[i+1]) / prices[i+1] for i in range(len(prices)-1)]
-            mean_r = sum(returns) / len(returns)
-            volatility = (sum((r - mean_r)**2 for r in returns) / len(returns))**0.5
-        else:
-            volatility = 0.0
+        # Get previous close from day before if available
+        previous_close = close_price
+        if len(dates) > 1:
+            prev_day = ts[dates[1]]
+            previous_close = float(prev_day['4. close'])
+
+        # Calculate change
+        change_amount = close_price - previous_close
+        change_percent = (change_amount / previous_close * 100) if previous_close > 0 else 0
 
         return {
             'symbol': symbol,
-            'date': latest_date,
-            'open': float(latest['1. open']),
+            'trading_day': latest_date,
+            'price': close_price,
+            'open': open_price,
             'high': float(latest['2. high']),
             'low': float(latest['3. low']),
-            'close': float(latest['4. close']),
             'volume': int(latest['5. volume']),
-            'moving_avg_5': moving_avg_5,
-            'moving_avg_20': moving_avg_20,
-            'volatility': volatility,
-            'data_quality': 'high' if len(prices) >= 20 else 'medium'
+            'previous_close': previous_close,
+            'change': change_amount,
+            'change_percent': change_percent,
+            'fetched_at': datetime.utcnow().isoformat()
         }
 
     except Exception as e:
@@ -312,35 +314,39 @@ def store_quote(symbol, data):
 
     try:
         with db_conn.cursor() as cur:
-            # Insert/update stock quote
+            # Insert/update stock quote - matches existing Railway database schema
             cur.execute("""
                 INSERT INTO stock_quotes
-                    (symbol, date, open_price, high_price, low_price, close_price,
-                     volume, moving_avg_5, moving_avg_20, volatility, data_quality)
+                    (symbol, price, open_price, high_price, low_price,
+                     volume, previous_close, change_amount, change_percent,
+                     trading_day, fetched_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (symbol, date)
+                ON CONFLICT (symbol, trading_day)
                 DO UPDATE SET
+                    price = EXCLUDED.price,
                     open_price = EXCLUDED.open_price,
                     high_price = EXCLUDED.high_price,
                     low_price = EXCLUDED.low_price,
-                    close_price = EXCLUDED.close_price,
                     volume = EXCLUDED.volume,
-                    moving_avg_5 = EXCLUDED.moving_avg_5,
-                    moving_avg_20 = EXCLUDED.moving_avg_20,
-                    volatility = EXCLUDED.volatility,
-                    data_quality = EXCLUDED.data_quality,
-                    created_at = CURRENT_TIMESTAMP
+                    previous_close = EXCLUDED.previous_close,
+                    change_amount = EXCLUDED.change_amount,
+                    change_percent = EXCLUDED.change_percent,
+                    fetched_at = EXCLUDED.fetched_at
             """, (
-                data['symbol'], data['date'], data['open'], data['high'],
-                data['low'], data['close'], data['volume'],
-                data['moving_avg_5'], data['moving_avg_20'],
-                data['volatility'], data['data_quality']
+                data['symbol'],
+                data['price'],
+                data['open'],
+                data['high'],
+                data['low'],
+                data['volume'],
+                data['previous_close'],
+                data['change'],
+                data['change_percent'],
+                data['trading_day'],
+                data['fetched_at']
             ))
 
             # Update latest price
-            change = data['close'] - data['open']
-            change_pct = (change / data['open']) * 100 if data['open'] > 0 else 0
-
             cur.execute("""
                 INSERT INTO latest_prices (symbol, price, change_amount, change_percent, volume, updated_at)
                 VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
@@ -351,7 +357,7 @@ def store_quote(symbol, data):
                     change_percent = EXCLUDED.change_percent,
                     volume = EXCLUDED.volume,
                     updated_at = CURRENT_TIMESTAMP
-            """, (symbol, data['close'], change, change_pct, data['volume']))
+            """, (symbol, data['price'], data['change'], data['change_percent'], data['volume']))
 
         return True
 
@@ -361,44 +367,36 @@ def store_quote(symbol, data):
 
 
 def generate_recommendation(symbol, data):
-    """Generate a simple recommendation based on technical indicators."""
+    """Generate a simple recommendation based on price momentum."""
     if not data:
         return None
 
     try:
-        close = data['close']
-        ma5 = data['moving_avg_5']
-        ma20 = data['moving_avg_20']
-        volatility = data['volatility']
+        current_price = data['price']
+        change_percent = data['change_percent']
 
         # Simple momentum-based recommendation
-        if close > ma5 > ma20:
+        if change_percent > 2:
             recommendation = 'BUY'
-            confidence = min(0.8, 0.5 + (close - ma20) / ma20)
-        elif close < ma5 < ma20:
+            confidence = min(0.8, 0.5 + change_percent / 10)
+        elif change_percent < -2:
             recommendation = 'SELL'
-            confidence = min(0.8, 0.5 + (ma20 - close) / close)
+            confidence = min(0.8, 0.5 + abs(change_percent) / 10)
         else:
             recommendation = 'HOLD'
             confidence = 0.5
 
-        # Adjust confidence based on volatility
-        if volatility > 0.03:
-            confidence *= 0.8  # Lower confidence in volatile markets
-
-        target_price = close * (1.05 if recommendation == 'BUY' else 0.95 if recommendation == 'SELL' else 1.0)
+        target_price = current_price * (1.05 if recommendation == 'BUY' else 0.95 if recommendation == 'SELL' else 1.0)
 
         return {
             'symbol': symbol,
             'recommendation': recommendation,
             'confidence': round(confidence, 4),
             'target_price': round(target_price, 2),
-            'current_price': close,
+            'current_price': current_price,
             'analysis': {
-                'ma5': ma5,
-                'ma20': ma20,
-                'volatility': volatility,
-                'trend': 'bullish' if ma5 > ma20 else 'bearish' if ma5 < ma20 else 'neutral'
+                'change_percent': change_percent,
+                'trend': 'bullish' if change_percent > 0 else 'bearish' if change_percent < 0 else 'neutral'
             }
         }
 
@@ -502,7 +500,7 @@ def run_data_ingestion(max_symbols=None):
                 if rec:
                     store_recommendation(symbol, rec)
                 succeeded += 1
-                logger.log_info(f"Processed {symbol}: {processed['close']:.2f}")
+                logger.log_info(f"Processed {symbol}: ${processed['price']:.2f}")
             else:
                 errors.append({'symbol': symbol, 'error': 'store_failed'})
 
