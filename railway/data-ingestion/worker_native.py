@@ -411,24 +411,49 @@ def store_recommendation(symbol, rec):
         return False
 
     try:
+        import uuid
+        recommendation_id = str(uuid.uuid4())
+
         with db_conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO stock_recommendations
-                    (symbol, recommendation, confidence, target_price, current_price, analysis_data, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (symbol)
-                DO UPDATE SET
-                    recommendation = EXCLUDED.recommendation,
-                    confidence = EXCLUDED.confidence,
-                    target_price = EXCLUDED.target_price,
-                    current_price = EXCLUDED.current_price,
-                    analysis_data = EXCLUDED.analysis_data,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (
-                rec['symbol'], rec['recommendation'], rec['confidence'],
-                rec['target_price'], rec['current_price'],
-                json.dumps(rec['analysis'])
-            ))
+            # Check if recommendation for this symbol exists
+            cur.execute("SELECT id FROM stock_recommendations WHERE symbol = %s", (symbol,))
+            existing = cur.fetchone()
+
+            if existing:
+                # Update existing
+                cur.execute("""
+                    UPDATE stock_recommendations SET
+                        recommendation_type = %s,
+                        confidence = %s,
+                        target_price = %s,
+                        current_price = %s,
+                        metadata = %s,
+                        timestamp = CURRENT_TIMESTAMP
+                    WHERE symbol = %s
+                """, (
+                    rec['recommendation'],
+                    rec['confidence'],
+                    rec['target_price'],
+                    rec['current_price'],
+                    json.dumps(rec['analysis']),
+                    symbol
+                ))
+            else:
+                # Insert new
+                cur.execute("""
+                    INSERT INTO stock_recommendations
+                        (recommendation_id, symbol, recommendation_type, confidence,
+                         target_price, current_price, metadata, timestamp)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                """, (
+                    recommendation_id,
+                    rec['symbol'],
+                    rec['recommendation'],
+                    rec['confidence'],
+                    rec['target_price'],
+                    rec['current_price'],
+                    json.dumps(rec['analysis'])
+                ))
         return True
     except Exception as e:
         logger.log_error(f"Store recommendation error for {symbol}: {e}")
