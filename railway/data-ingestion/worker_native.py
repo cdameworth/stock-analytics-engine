@@ -7,11 +7,12 @@ import os
 import sys
 import time
 import json
+import math
 import schedule
 import urllib.request
 import urllib.parse
 import socket
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta
 from decimal import Decimal
 import pytz
 
@@ -119,21 +120,32 @@ def init_database():
                 );
             """)
 
+            # Note: price_predictions and time_predictions tables are expected to exist
+            # from the main schema.sql migration. We verify they exist but don't create them.
+            # If they don't exist, the store_*_prediction functions will gracefully fail.
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS price_predictions (
-                    id SERIAL PRIMARY KEY,
-                    symbol VARCHAR(10) NOT NULL,
-                    prediction_date DATE NOT NULL,
-                    predicted_price DECIMAL(12,4),
-                    actual_price DECIMAL(12,4),
-                    confidence DECIMAL(5,4),
-                    model_version VARCHAR(50),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(symbol, prediction_date, model_version)
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'price_predictions'
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_price_predictions_symbol ON price_predictions(symbol);
             """)
+            has_price_table = cur.fetchone()[0]
+            if has_price_table:
+                logger.log_info("price_predictions table exists")
+            else:
+                logger.log_warning("price_predictions table does not exist - predictions will be skipped")
+
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'time_predictions'
+                );
+            """)
+            has_time_table = cur.fetchone()[0]
+            if has_time_table:
+                logger.log_info("time_predictions table exists")
+            else:
+                logger.log_warning("time_predictions table does not exist - predictions will be skipped")
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS ingestion_logs (
@@ -460,6 +472,348 @@ def store_recommendation(symbol, rec):
         return False
 
 
+# =============================================================================
+# PRICE PREDICTION MODEL
+# =============================================================================
+
+# Sector mappings for prediction algorithm
+TECH_STOCKS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'AMD', 'INTC', 'ORCL', 'CRM', 'ADBE', 'NFLX']
+FINANCE_STOCKS = ['JPM', 'BAC', 'WFC', 'GS', 'MS', 'V', 'MA', 'PYPL']
+HEALTHCARE_STOCKS = ['JNJ', 'PFE', 'UNH', 'ABBV', 'MRK', 'LLY', 'BMY', 'AMGN']
+LARGE_CAP = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'JPM', 'JNJ', 'V', 'UNH']
+
+
+def get_sector_strength(symbol):
+    """Get sector relative strength for prediction."""
+    if symbol in TECH_STOCKS:
+        return 0.01  # Tech slightly positive
+    elif symbol in FINANCE_STOCKS:
+        return -0.005  # Finance slightly negative
+    elif symbol in HEALTHCARE_STOCKS:
+        return 0.015  # Healthcare positive
+    else:
+        return 0.0  # Neutral for others
+
+
+def get_market_trend():
+    """Get overall market trend (simplified)."""
+    return 0.005  # Slightly positive market
+
+
+def calculate_volatility(symbol):
+    """Calculate stock volatility based on category."""
+    if symbol in LARGE_CAP:
+        return 0.15  # 15% volatility for large cap
+    else:
+        return 0.25  # 25% volatility for others
+
+
+def calculate_base_trend(change_percent):
+    """Calculate base trend from price change (simulating RSI/MACD behavior)."""
+    # Simulate RSI-like signal based on recent price change
+    if change_percent < -3:
+        rsi_signal = 0.08  # Oversold - bullish
+    elif change_percent > 3:
+        rsi_signal = -0.06  # Overbought - bearish
+    else:
+        rsi_signal = -change_percent / 100  # Linear scaling
+
+    # Simulate MACD-like signal
+    macd_signal = max(min(change_percent * 0.01, 0.05), -0.05)
+
+    # Bollinger-like position (assume middle)
+    bollinger_signal = 0
+
+    return rsi_signal + macd_signal + bollinger_signal
+
+
+def generate_price_prediction(symbol, data, timeframe_days=30):
+    """
+    Generate price target prediction using technical and fundamental analysis.
+    Ported from Lambda price_prediction_model.py.
+    """
+    if not data:
+        return None
+
+    try:
+        current_price = data['price']
+        change_percent = data['change_percent']
+
+        # Fundamental factors
+        sector_strength = get_sector_strength(symbol)
+        market_trend = get_market_trend()
+        volatility = calculate_volatility(symbol)
+
+        # Price prediction algorithm
+        base_trend = calculate_base_trend(change_percent)
+        sector_adjustment = sector_strength * 0.02  # ±2% sector impact
+        market_adjustment = market_trend * 0.015    # ±1.5% market impact
+        volume_impact = 0  # Simplified - no volume ratio available
+
+        # Calculate total expected return
+        total_expected_return = base_trend + sector_adjustment + market_adjustment + volume_impact
+
+        # Apply timeframe scaling
+        timeframe_multiplier = math.sqrt(timeframe_days / 30.0)
+        adjusted_return = total_expected_return * timeframe_multiplier
+
+        # Calculate target price
+        target_price = current_price * (1 + adjusted_return)
+
+        # Determine recommendation
+        if adjusted_return > 0.05:
+            recommendation = 'BUY'
+        elif adjusted_return < -0.05:
+            recommendation = 'SELL'
+        else:
+            recommendation = 'HOLD'
+
+        # Calculate confidence based on signal strength
+        signal_strength = abs(adjusted_return)
+        confidence = min(0.5 + (signal_strength * 2), 0.95)
+
+        # Price range estimation
+        price_range_pct = volatility * 0.5
+        price_low = target_price * (1 - price_range_pct)
+        price_high = target_price * (1 + price_range_pct)
+
+        # Key factors driving prediction
+        factors = []
+        if abs(change_percent) > 2:
+            factors.append('momentum_signal' if change_percent > 0 else 'reversal_signal')
+        if sector_strength > 0.01:
+            factors.append('sector_strength')
+        elif sector_strength < -0.01:
+            factors.append('sector_weakness')
+        if symbol in LARGE_CAP:
+            factors.append('large_cap_stability')
+
+        return {
+            'symbol': symbol,
+            'target_price': round(target_price, 2),
+            'current_price': current_price,
+            'recommendation': recommendation,
+            'confidence': round(confidence, 4),
+            'expected_return': round(adjusted_return * 100, 2),
+            'price_range': {
+                'low': round(price_low, 2),
+                'high': round(price_high, 2)
+            },
+            'factors': factors,
+            'timeframe_days': timeframe_days,
+            'model_version': 'price_v1.0_railway'
+        }
+
+    except Exception as e:
+        logger.log_error(f"Price prediction error for {symbol}: {e}")
+        return None
+
+
+def store_price_prediction(symbol, prediction):
+    """Store price prediction in PostgreSQL.
+
+    Matches railway/schema.sql price_predictions table structure.
+    """
+    if not db_conn or not prediction:
+        return False
+
+    try:
+        validation_date = datetime.utcnow() + timedelta(days=prediction['timeframe_days'])
+
+        with db_conn.cursor() as cur:
+            # Insert new prediction (no upsert - each prediction is unique with UUID)
+            cur.execute("""
+                INSERT INTO price_predictions
+                    (symbol, predicted_price, confidence_score, recommendation,
+                     prediction_date, validation_date, validation_status)
+                VALUES (%s, %s, %s, %s, NOW(), %s, 'pending')
+            """, (
+                symbol,
+                prediction['target_price'],
+                prediction['confidence'],
+                prediction['recommendation'],
+                validation_date
+            ))
+        logger.log_info(f"Stored price prediction for {symbol}: ${prediction['target_price']:.2f} ({prediction['recommendation']})")
+        return True
+    except Exception as e:
+        logger.log_error(f"Store price prediction error for {symbol}: {e}")
+        return False
+
+
+# =============================================================================
+# TIME-TO-HIT PREDICTION MODEL
+# =============================================================================
+
+def generate_time_prediction(symbol, data, target_price=None):
+    """
+    Generate time-to-hit prediction.
+    Ported from Lambda time_to_hit_predictor_slim.py.
+    """
+    if not data:
+        return None
+
+    try:
+        current_price = data['price']
+
+        # If no target price provided, use recommendation target (+/- 5%)
+        if target_price is None:
+            change_percent = data['change_percent']
+            if change_percent > 0:
+                target_price = current_price * 1.05  # 5% up target
+            else:
+                target_price = current_price * 0.95  # 5% down target
+
+        # Calculate price change percentage to target
+        price_change_pct = ((target_price - current_price) / current_price) * 100
+
+        # Time estimation based on price change magnitude
+        if abs(price_change_pct) < 2:
+            expected_days_min, expected_days_max = 5, 15
+            confidence_level = 'high'
+            confidence_score = 0.85
+        elif abs(price_change_pct) < 5:
+            expected_days_min, expected_days_max = 10, 30
+            confidence_level = 'medium'
+            confidence_score = 0.70
+        elif abs(price_change_pct) < 10:
+            expected_days_min, expected_days_max = 15, 60
+            confidence_level = 'medium'
+            confidence_score = 0.55
+        else:
+            expected_days_min, expected_days_max = 30, 120
+            confidence_level = 'low'
+            confidence_score = 0.40
+
+        predicted_days = (expected_days_min + expected_days_max) // 2
+        expected_hit_date = datetime.utcnow().date() + timedelta(days=predicted_days)
+
+        return {
+            'symbol': symbol,
+            'target_price': round(target_price, 2),
+            'current_price': current_price,
+            'price_change_pct': round(price_change_pct, 2),
+            'predicted_days_min': expected_days_min,
+            'predicted_days_max': expected_days_max,
+            'predicted_days': predicted_days,
+            'expected_hit_date': expected_hit_date,
+            'confidence_level': confidence_level,
+            'confidence_score': round(confidence_score, 4),
+            'model_version': 'time_v1.0_railway'
+        }
+
+    except Exception as e:
+        logger.log_error(f"Time prediction error for {symbol}: {e}")
+        return None
+
+
+def store_time_prediction(symbol, prediction):
+    """Store time-to-hit prediction in PostgreSQL.
+
+    Handles both the full schema (from schema.sql) and simpler schemas.
+    """
+    if not db_conn or not prediction:
+        return False
+
+    try:
+        with db_conn.cursor() as cur:
+            # Check if target_price column exists in time_predictions table
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'time_predictions' AND column_name = 'target_price'
+            """)
+            has_target_price = cur.fetchone() is not None
+
+            if has_target_price:
+                # Full schema from schema.sql
+                cur.execute("""
+                    INSERT INTO time_predictions
+                        (symbol, target_price, predicted_days, confidence_score,
+                         prediction_date, expected_hit_date, validation_status)
+                    VALUES (%s, %s, %s, %s, NOW(), %s, 'pending')
+                """, (
+                    symbol,
+                    prediction['target_price'],
+                    prediction['predicted_days'],
+                    prediction['confidence_score'],
+                    prediction['expected_hit_date']
+                ))
+            else:
+                # Simpler schema without target_price - check what columns exist
+                cur.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'time_predictions'
+                """)
+                columns = [row[0] for row in cur.fetchall()]
+
+                # Handle the Railway schema: id, prediction_id, symbol, expected_days, confidence_level, prediction_data, timestamp
+                if 'symbol' in columns and 'expected_days' in columns:
+                    import uuid
+                    prediction_id = str(uuid.uuid4())
+
+                    # Build prediction_data JSON with full prediction details
+                    prediction_data = {
+                        'target_price': prediction['target_price'],
+                        'current_price': prediction['current_price'],
+                        'price_change_pct': prediction['price_change_pct'],
+                        'predicted_days_min': prediction['predicted_days_min'],
+                        'predicted_days_max': prediction['predicted_days_max'],
+                        'expected_hit_date': prediction['expected_hit_date'].isoformat() if prediction['expected_hit_date'] else None,
+                        'model_version': prediction['model_version']
+                    }
+
+                    cur.execute("""
+                        INSERT INTO time_predictions
+                            (prediction_id, symbol, expected_days, confidence_level, prediction_data, timestamp)
+                        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    """, (
+                        prediction_id,
+                        symbol,
+                        prediction['predicted_days'],
+                        prediction['confidence_level'],
+                        json.dumps(prediction_data)
+                    ))
+                elif 'symbol' in columns and 'predicted_days' in columns:
+                    # Alternative schema with predicted_days
+                    insert_cols = ['symbol', 'predicted_days']
+                    insert_vals = [symbol, prediction['predicted_days']]
+
+                    if 'confidence_score' in columns:
+                        insert_cols.append('confidence_score')
+                        insert_vals.append(prediction['confidence_score'])
+                    elif 'confidence' in columns:
+                        insert_cols.append('confidence')
+                        insert_vals.append(prediction['confidence_score'])
+
+                    if 'expected_hit_date' in columns:
+                        insert_cols.append('expected_hit_date')
+                        insert_vals.append(prediction['expected_hit_date'])
+
+                    if 'prediction_date' in columns:
+                        insert_cols.append('prediction_date')
+                        insert_vals.append(datetime.utcnow())
+
+                    placeholders = ', '.join(['%s'] * len(insert_vals))
+                    col_str = ', '.join(insert_cols)
+                    cur.execute(f"""
+                        INSERT INTO time_predictions ({col_str})
+                        VALUES ({placeholders})
+                    """, insert_vals)
+                else:
+                    logger.log_warning(f"time_predictions table has unexpected schema: {columns}")
+                    return False
+
+        logger.log_info(f"Stored time prediction for {symbol}: {prediction['predicted_days']} days to ${prediction['target_price']:.2f}")
+        return True
+    except Exception as e:
+        logger.log_error(f"Store time prediction error for {symbol}: {e}")
+        return False
+
+
+# =============================================================================
+# LOGGING AND INGESTION
+# =============================================================================
+
 def log_ingestion_run(run_id, attempted, succeeded, duration, errors):
     """Log ingestion run metrics to database."""
     if not db_conn:
@@ -524,8 +878,25 @@ def run_data_ingestion(max_symbols=None):
                 rec = generate_recommendation(symbol, processed)
                 if rec:
                     store_recommendation(symbol, rec)
+
+                # Generate and store price prediction
+                price_pred = generate_price_prediction(symbol, processed)
+                if price_pred:
+                    store_price_prediction(symbol, price_pred)
+                    # Use price prediction target for time prediction
+                    target_price = price_pred['target_price']
+                else:
+                    # Fallback to simple 5% target
+                    target_price = processed['price'] * 1.05
+
+                # Generate and store time-to-hit prediction
+                time_pred = generate_time_prediction(symbol, processed, target_price)
+                if time_pred:
+                    store_time_prediction(symbol, time_pred)
+
                 succeeded += 1
-                logger.log_info(f"Processed {symbol}: ${processed['price']:.2f}")
+                pred_info = f"price=${price_pred['target_price']:.2f}" if price_pred else "no prediction"
+                logger.log_info(f"Processed {symbol}: ${processed['price']:.2f} ({pred_info})")
             else:
                 errors.append({'symbol': symbol, 'error': 'store_failed'})
 
