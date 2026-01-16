@@ -42,9 +42,10 @@ class PredictionsService:
                     id,
                     symbol,
                     predicted_price,
-                    confidence,
+                    confidence_score,
+                    recommendation,
                     validation_status,
-                    timestamp,
+                    prediction_date,
                     validation_date,
                     actual_price,
                     accuracy_pct,
@@ -62,7 +63,7 @@ class PredictionsService:
                 query += " AND validation_status = %s"
                 params.append(status)
 
-            query += " ORDER BY timestamp DESC LIMIT %s"
+            query += " ORDER BY prediction_date DESC LIMIT %s"
             params.append(limit)
 
             rows = db.execute(query, tuple(params) if params else None)
@@ -73,9 +74,10 @@ class PredictionsService:
                     'id': str(row['id']) if row.get('id') else None,
                     'symbol': row.get('symbol'),
                     'predicted_price': float(row['predicted_price']) if row.get('predicted_price') else None,
-                    'confidence_score': float(row['confidence']) if row.get('confidence') else None,
+                    'confidence_score': float(row['confidence_score']) if row.get('confidence_score') else None,
+                    'recommendation': row.get('recommendation'),
                     'validation_status': row.get('validation_status'),
-                    'prediction_date': row['timestamp'].isoformat() if row.get('timestamp') else None,
+                    'prediction_date': row['prediction_date'].isoformat() if row.get('prediction_date') else None,
                     'validation_date': row['validation_date'].isoformat() if row.get('validation_date') else None,
                     'actual_price': float(row['actual_price']) if row.get('actual_price') else None,
                     'accuracy_pct': float(row['accuracy_pct']) if row.get('accuracy_pct') else None,
@@ -426,33 +428,33 @@ class PredictionsService:
             }
 
         try:
-            # Overall stats
+            # Overall stats - use confidence_score and prediction_date columns
             stats = db.execute_one("""
                 SELECT
                     COUNT(*) as total,
                     COUNT(*) FILTER (WHERE validation_status = 'validated') as validated,
                     COUNT(*) FILTER (WHERE validation_status = 'pending') as pending,
                     AVG(accuracy_pct) FILTER (WHERE validation_status = 'validated') as avg_accuracy,
-                    AVG(confidence) as avg_confidence
+                    AVG(confidence_score) as avg_confidence
                 FROM price_predictions
-                WHERE timestamp > NOW() - INTERVAL '30 days'
+                WHERE prediction_date > NOW() - INTERVAL '30 days'
             """)
 
-            # Accuracy by confidence bucket
+            # Accuracy by confidence bucket - use confidence_score column
             buckets = db.execute("""
                 SELECT
                     CASE
-                        WHEN confidence >= 0.9 THEN '90-100%'
-                        WHEN confidence >= 0.8 THEN '80-90%'
-                        WHEN confidence >= 0.7 THEN '70-80%'
-                        WHEN confidence >= 0.6 THEN '60-70%'
+                        WHEN confidence_score >= 0.9 THEN '90-100%'
+                        WHEN confidence_score >= 0.8 THEN '80-90%'
+                        WHEN confidence_score >= 0.7 THEN '70-80%'
+                        WHEN confidence_score >= 0.6 THEN '60-70%'
                         ELSE '< 60%'
                     END as bucket,
                     COUNT(*) as count,
                     AVG(accuracy_pct) as avg_accuracy
                 FROM price_predictions
                 WHERE validation_status = 'validated'
-                  AND timestamp > NOW() - INTERVAL '30 days'
+                  AND prediction_date > NOW() - INTERVAL '30 days'
                 GROUP BY bucket
                 ORDER BY bucket DESC
             """)

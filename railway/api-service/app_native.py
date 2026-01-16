@@ -354,9 +354,9 @@ def analytics_dashboard():
         with conn.cursor() as cur:
             # Get recommendation distribution
             cur.execute("""
-                SELECT recommendation, COUNT(*) as count
+                SELECT recommendation_type, COUNT(*) as count
                 FROM stock_recommendations
-                GROUP BY recommendation
+                GROUP BY recommendation_type
             """)
             rec_dist = {row[0]: row[1] for row in cur.fetchall()}
 
@@ -374,15 +374,26 @@ def analytics_dashboard():
 
             # Get top performers (highest confidence BUY recommendations)
             cur.execute("""
-                SELECT symbol, recommendation, confidence, target_price, current_price
+                SELECT symbol, recommendation_type, confidence, target_price, current_price
                 FROM stock_recommendations
-                WHERE recommendation = 'BUY'
+                WHERE recommendation_type = 'BUY'
                 ORDER BY confidence DESC
                 LIMIT 5
             """)
-            top_buys = [{'symbol': r[0], 'confidence': float(r[2]),
-                        'target_price': float(r[3]), 'current_price': float(r[4])}
+            top_buys = [{'symbol': r[0], 'confidence': float(r[2]) if r[2] else 0,
+                        'target_price': float(r[3]) if r[3] else 0, 'current_price': float(r[4]) if r[4] else 0}
                        for r in cur.fetchall()]
+
+            # Get prediction stats for today
+            cur.execute("""
+                SELECT
+                    COUNT(*) as total_predictions,
+                    COUNT(*) FILTER (WHERE validation_status = 'pending') as pending,
+                    AVG(confidence_score) as avg_confidence
+                FROM price_predictions
+                WHERE prediction_date > NOW() - INTERVAL '24 hours'
+            """)
+            pred_row = cur.fetchone()
 
             # Get symbol count
             cur.execute("SELECT COUNT(DISTINCT symbol) FROM stock_quotes")
@@ -398,6 +409,11 @@ def analytics_dashboard():
                     'total_symbols_processed': ingestion_row[1] or 0,
                     'avg_success_rate': round(ingestion_row[2] or 0, 2),
                     'avg_duration_seconds': round(ingestion_row[3] or 0, 2)
+                },
+                'predictions_24h': {
+                    'total_predictions': pred_row[0] or 0,
+                    'pending_predictions': pred_row[1] or 0,
+                    'avg_confidence': round(float(pred_row[2]) * 100, 1) if pred_row[2] else 0
                 }
             },
             'timestamp': datetime.utcnow().isoformat()
