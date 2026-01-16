@@ -28,7 +28,7 @@ ALPHA_VANTAGE_API_KEY = os.environ.get('ALPHA_VANTAGE_API_KEY', '')
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 REDIS_URL = os.environ.get('REDIS_URL', '')
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'production')
-MAX_SYMBOLS_PER_RUN = int(os.environ.get('MAX_SYMBOLS_PER_RUN', '3'))
+MAX_SYMBOLS_PER_RUN = int(os.environ.get('MAX_SYMBOLS_PER_RUN', '15'))
 MARKET_INTERVAL_MINUTES = int(os.environ.get('MARKET_INTERVAL_MINUTES', '5'))
 EVENING_INTERVAL_MINUTES = int(os.environ.get('EVENING_INTERVAL_MINUTES', '10'))
 PER_CALL_TIMEOUT = int(os.environ.get('PER_CALL_TIMEOUT', '8'))
@@ -193,14 +193,14 @@ def init_cache():
 
 
 def is_market_hours():
-    """Check if current time is during market hours (9 AM - 4 PM EST)."""
+    """Check if current time is during market hours (9:30 AM - 4 PM EST)."""
     est = pytz.timezone('US/Eastern')
     now = datetime.now(est)
 
     if now.weekday() >= 5:  # Weekend
         return False
 
-    market_open = dt_time(9, 0)
+    market_open = dt_time(9, 30)  # US market opens at 9:30 AM ET
     market_close = dt_time(16, 0)
     return market_open <= now.time() <= market_close
 
