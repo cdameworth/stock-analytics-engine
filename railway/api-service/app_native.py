@@ -424,6 +424,177 @@ def analytics_dashboard():
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# AI PERFORMANCE ENDPOINTS
+# =============================================================================
+
+@app.route('/api/ai-performance/<period>/breakdown', methods=['GET'])
+def ai_performance_breakdown(period):
+    """Get AI performance breakdown for a given period (1W, 1M, 3M, etc.)."""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    # Map period to days
+    period_map = {
+        '1W': 7,
+        '1M': 30,
+        '3M': 90,
+        '6M': 180,
+        '1Y': 365
+    }
+    lookback_days = period_map.get(period.upper(), 30)
+
+    try:
+        with conn.cursor() as cur:
+            # Get overall prediction performance
+            cur.execute("""
+                SELECT
+                    COUNT(*) as total_predictions,
+                    COUNT(*) FILTER (WHERE validation_status = 'validated') as validated,
+                    COUNT(*) FILTER (WHERE validation_status = 'pending') as pending,
+                    AVG(accuracy_pct) FILTER (WHERE validation_status = 'validated') as avg_accuracy,
+                    AVG(confidence_score) as avg_confidence
+                FROM price_predictions
+                WHERE prediction_date > NOW() - INTERVAL '%s days'
+            """, (lookback_days,))
+            stats_row = cur.fetchone()
+
+            # Get breakdown by recommendation type
+            cur.execute("""
+                SELECT
+                    recommendation,
+                    COUNT(*) as total,
+                    COUNT(*) FILTER (WHERE validation_status = 'validated') as validated,
+                    AVG(accuracy_pct) FILTER (WHERE validation_status = 'validated') as avg_accuracy
+                FROM price_predictions
+                WHERE prediction_date > NOW() - INTERVAL '%s days'
+                GROUP BY recommendation
+            """, (lookback_days,))
+
+            breakdown = {}
+            for row in cur.fetchall():
+                rec_type = row[0] or 'UNKNOWN'
+                breakdown[rec_type] = {
+                    'total': row[1] or 0,
+                    'validated': row[2] or 0,
+                    'avg_accuracy': round(float(row[3]), 2) if row[3] else None
+                }
+
+            # Get time predictions stats - handle different schema
+            # Railway schema uses: expected_days, confidence_level (not confidence_score)
+            cur.execute("""
+                SELECT
+                    COUNT(*) as total
+                FROM time_predictions
+                WHERE timestamp > NOW() - INTERVAL '%s days'
+            """, (lookback_days,))
+            time_row = cur.fetchone()
+            time_count = time_row[0] if time_row else 0
+
+            # Calculate hit rate (simplified - based on validated predictions with >90% accuracy)
+            cur.execute("""
+                SELECT
+                    COUNT(*) as total,
+                    COUNT(*) FILTER (WHERE accuracy_pct >= 90) as hits
+                FROM price_predictions
+                WHERE validation_status = 'validated'
+                  AND prediction_date > NOW() - INTERVAL '%s days'
+            """, (lookback_days,))
+            hit_row = cur.fetchone()
+            hit_rate = (hit_row[1] / hit_row[0] * 100) if hit_row[0] and hit_row[0] > 0 else 0
+
+        return jsonify({
+            'period': period.upper(),
+            'lookback_days': lookback_days,
+            'price_predictions': {
+                'total': stats_row[0] or 0,
+                'validated': stats_row[1] or 0,
+                'pending': stats_row[2] or 0,
+                'avg_accuracy': round(float(stats_row[3]), 2) if stats_row[3] else None,
+                'avg_confidence': round(float(stats_row[4]) * 100, 1) if stats_row[4] else 0,
+                'hit_rate': round(hit_rate, 1)
+            },
+            'time_predictions': {
+                'total': time_count
+            },
+            'breakdown_by_recommendation': breakdown,
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+
+    except Exception as e:
+        logger.log_error(f"Error generating AI performance breakdown: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai-performance/tuning-history', methods=['GET'])
+def ai_performance_tuning_history():
+    """Get model tuning history."""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database unavailable'}), 503
+
+    limit = request.args.get('limit', 30, type=int)
+
+    try:
+        with conn.cursor() as cur:
+            # Check if model_performance table exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'model_performance'
+                )
+            """)
+            has_table = cur.fetchone()[0]
+
+            if not has_table:
+                # Return empty history if table doesn't exist
+                return jsonify({
+                    'tuning_history': [],
+                    'message': 'No tuning history available yet',
+                    'timestamp': datetime.utcnow().isoformat()
+                }), 200
+
+            # Get tuning history from model_performance table
+            cur.execute("""
+                SELECT
+                    model_type,
+                    evaluation_date,
+                    total_predictions,
+                    correct_predictions,
+                    hit_rate,
+                    avg_confidence,
+                    metrics,
+                    created_at
+                FROM model_performance
+                ORDER BY evaluation_date DESC
+                LIMIT %s
+            """, (limit,))
+
+            history = []
+            for row in cur.fetchall():
+                history.append({
+                    'model_type': row[0],
+                    'evaluation_date': row[1].isoformat() if row[1] else None,
+                    'total_predictions': row[2],
+                    'correct_predictions': row[3],
+                    'hit_rate': round(float(row[4]) * 100, 2) if row[4] else 0,
+                    'avg_confidence': round(float(row[5]) * 100, 2) if row[5] else 0,
+                    'metrics': row[6] if row[6] else {},
+                    'created_at': row[7].isoformat() if row[7] else None
+                })
+
+        return jsonify({
+            'tuning_history': history,
+            'count': len(history),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+
+    except Exception as e:
+        logger.log_error(f"Error fetching tuning history: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # Error handlers
 @app.errorhandler(404)
 def not_found(error):
