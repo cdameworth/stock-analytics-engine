@@ -116,26 +116,43 @@ def get_predictions_to_validate(lookback_days=7):
 
     try:
         with db_conn.cursor() as cur:
-            # Get recommendations from N days ago that haven't been validated
-            # Uses recommendation_type column to match existing database schema
+            # Get price predictions from N days ago that haven't been validated
+            # Uses price_predictions table which stores historical predictions
+            # Join with stock_quotes to get price at prediction time
+            # Note: stock_quotes stores daily prices with trading_day column
             cur.execute("""
-                SELECT r.symbol, r.recommendation_type as recommendation, r.confidence, r.target_price,
-                       r.current_price, r.timestamp as updated_at
-                FROM stock_recommendations r
-                WHERE r.timestamp < NOW() - INTERVAL '%s days'
-                AND r.timestamp > NOW() - INTERVAL '%s days'
+                SELECT pp.symbol,
+                       COALESCE(sr.recommendation_type, 'HOLD') as recommendation,
+                       COALESCE(pp.confidence, 0.5) as confidence,
+                       pp.predicted_price as target_price,
+                       COALESCE(sq.price, lp.price) as original_price,
+                       COALESCE(pp.timestamp, pp.created_at) as updated_at
+                FROM price_predictions pp
+                LEFT JOIN stock_recommendations sr ON sr.symbol = pp.symbol
+                LEFT JOIN latest_prices lp ON lp.symbol = pp.symbol
+                LEFT JOIN stock_quotes sq ON sq.symbol = pp.symbol
+                    AND sq.trading_day = COALESCE(pp.timestamp, pp.created_at)::date
+                WHERE COALESCE(pp.timestamp, pp.created_at) < NOW() - INTERVAL '%s days'
+                AND COALESCE(pp.timestamp, pp.created_at) > NOW() - INTERVAL '%s days'
+                AND (pp.validation_status IS NULL OR pp.validation_status = 'pending')
                 AND NOT EXISTS (
                     SELECT 1 FROM prediction_validations pv
-                    WHERE pv.symbol = r.symbol
-                    AND pv.prediction_date = r.timestamp::date
+                    WHERE pv.symbol = pp.symbol
+                    AND pv.prediction_date = COALESCE(pp.timestamp, pp.created_at)::date
                 )
-                ORDER BY r.timestamp DESC
+                ORDER BY COALESCE(pp.timestamp, pp.created_at) DESC
                 LIMIT 100
             """, (lookback_days - 2, lookback_days + 5))
 
             columns = ['symbol', 'recommendation', 'confidence', 'target_price',
                       'current_price', 'updated_at']
-            return [dict(zip(columns, row)) for row in cur.fetchall()]
+            results = [dict(zip(columns, row)) for row in cur.fetchall()]
+
+            logger.log_info(f"Found {len(results)} predictions to validate")
+            for r in results[:3]:  # Log first 3 for debugging
+                logger.log_info(f"  {r['symbol']}: target=${r.get('target_price')}, orig=${r.get('current_price')}")
+
+            return results
 
     except Exception as e:
         logger.log_error(f"Error getting predictions to validate: {e}")
@@ -165,13 +182,21 @@ def validate_prediction(prediction):
         return None
 
     symbol = prediction['symbol']
-    current_price = get_current_price(symbol)
+    actual_current_price = get_current_price(symbol)
 
-    if not current_price:
+    if not actual_current_price:
+        logger.log_warning(f"No current price found for {symbol}")
         return None
 
+    # original_price is the price when prediction was made
+    original_price = prediction.get('current_price')
+    if not original_price:
+        logger.log_warning(f"No original price for {symbol}, using current as baseline")
+        original_price = actual_current_price
+
     try:
-        original_price = float(prediction['current_price'])
+        original_price = float(original_price)
+        current_price = actual_current_price
         target_price = float(prediction['target_price'])
         recommendation = prediction['recommendation']
         confidence = float(prediction['confidence'])

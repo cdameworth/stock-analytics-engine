@@ -38,14 +38,14 @@ class RecommendationsService:
                     recommendation_type,
                     target_price,
                     current_price,
-                    company_name,
-                    confidence_score,
-                    analysis_summary,
-                    created_at,
-                    updated_at
-                FROM recommendations
-                WHERE created_at > NOW() - INTERVAL '7 days'
-                ORDER BY confidence_score DESC NULLS LAST, created_at DESC
+                    NULL as company_name,
+                    confidence as confidence_score,
+                    metadata as analysis_summary,
+                    timestamp as created_at,
+                    timestamp as updated_at
+                FROM stock_recommendations
+                WHERE timestamp > NOW() - INTERVAL '7 days'
+                ORDER BY confidence DESC NULLS LAST, timestamp DESC
                 LIMIT %s
             """, (limit,))
 
@@ -94,14 +94,14 @@ class RecommendationsService:
                     recommendation_type,
                     target_price,
                     current_price,
-                    company_name,
-                    confidence_score,
-                    analysis_summary,
-                    created_at,
-                    updated_at
-                FROM recommendations
+                    NULL as company_name,
+                    confidence as confidence_score,
+                    metadata as analysis_summary,
+                    timestamp as created_at,
+                    timestamp as updated_at
+                FROM stock_recommendations
                 WHERE symbol = %s
-                ORDER BY created_at DESC
+                ORDER BY timestamp DESC
                 LIMIT 1
             """, (symbol.upper(),))
 
@@ -159,26 +159,27 @@ class RecommendationsService:
             }
 
         try:
+            import json
             db.execute("""
-                INSERT INTO recommendations (
+                INSERT INTO stock_recommendations (
                     symbol, recommendation_type, target_price, current_price,
-                    confidence_score, analysis_summary
-                ) VALUES (%s, %s, %s, %s, %s, %s)
+                    confidence, metadata, timestamp
+                ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                 ON CONFLICT (symbol)
                 DO UPDATE SET
                     recommendation_type = EXCLUDED.recommendation_type,
                     target_price = EXCLUDED.target_price,
                     current_price = EXCLUDED.current_price,
-                    confidence_score = EXCLUDED.confidence_score,
-                    analysis_summary = EXCLUDED.analysis_summary,
-                    updated_at = NOW()
+                    confidence = EXCLUDED.confidence,
+                    metadata = EXCLUDED.metadata,
+                    timestamp = CURRENT_TIMESTAMP
             """, (
                 symbol.upper(),
                 recommendation,
                 target_price,
                 current_price,
                 confidence_score,
-                analysis_summary
+                json.dumps({'summary': analysis_summary}) if analysis_summary else None
             ))
 
             logger.info(f"Created/updated recommendation for {symbol}: {recommendation}")
@@ -223,14 +224,14 @@ class RecommendationsService:
                     recommendation_type,
                     target_price,
                     current_price,
-                    company_name,
-                    confidence_score,
-                    analysis_summary,
-                    created_at
-                FROM recommendations
+                    NULL as company_name,
+                    confidence as confidence_score,
+                    metadata as analysis_summary,
+                    timestamp as created_at
+                FROM stock_recommendations
                 WHERE recommendation_type = %s
-                  AND created_at > NOW() - INTERVAL '7 days'
-                ORDER BY confidence_score DESC NULLS LAST, created_at DESC
+                  AND timestamp > NOW() - INTERVAL '7 days'
+                ORDER BY confidence DESC NULLS LAST, timestamp DESC
                 LIMIT %s
             """, (recommendation_type, limit))
 
@@ -283,14 +284,14 @@ class RecommendationsService:
                     recommendation_type,
                     target_price,
                     current_price,
-                    company_name,
-                    confidence_score,
-                    analysis_summary,
-                    created_at
-                FROM recommendations
-                WHERE confidence_score >= %s
-                  AND created_at > NOW() - INTERVAL '7 days'
-                ORDER BY confidence_score DESC
+                    NULL as company_name,
+                    confidence as confidence_score,
+                    metadata as analysis_summary,
+                    timestamp as created_at
+                FROM stock_recommendations
+                WHERE confidence >= %s
+                  AND timestamp > NOW() - INTERVAL '7 days'
+                ORDER BY confidence DESC
                 LIMIT %s
             """, (min_confidence, limit))
 

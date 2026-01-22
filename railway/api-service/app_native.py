@@ -139,8 +139,8 @@ def get_recommendations():
 
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT symbol, recommendation, confidence, target_price,
-                       current_price, analysis_data, updated_at
+                SELECT symbol, recommendation_type as recommendation, confidence, target_price,
+                       current_price, metadata as analysis_data, timestamp as updated_at
                 FROM stock_recommendations
                 ORDER BY confidence DESC
                 LIMIT 100
@@ -191,8 +191,8 @@ def get_recommendation_by_symbol(symbol):
 
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT symbol, recommendation, confidence, target_price,
-                       current_price, analysis_data, updated_at
+                SELECT symbol, recommendation_type as recommendation, confidence, target_price,
+                       current_price, metadata as analysis_data, timestamp as updated_at
                 FROM stock_recommendations
                 WHERE symbol = %s
             """, (symbol,))
@@ -354,9 +354,9 @@ def analytics_dashboard():
         with conn.cursor() as cur:
             # Get recommendation distribution
             cur.execute("""
-                SELECT recommendation, COUNT(*) as count
+                SELECT recommendation_type, COUNT(*) as count
                 FROM stock_recommendations
-                GROUP BY recommendation
+                GROUP BY recommendation_type
             """)
             rec_dist = {row[0]: row[1] for row in cur.fetchall()}
 
@@ -374,9 +374,9 @@ def analytics_dashboard():
 
             # Get top performers (highest confidence BUY recommendations)
             cur.execute("""
-                SELECT symbol, recommendation, confidence, target_price, current_price
+                SELECT symbol, recommendation_type, confidence, target_price, current_price
                 FROM stock_recommendations
-                WHERE recommendation = 'BUY'
+                WHERE recommendation_type = 'BUY'
                 ORDER BY confidence DESC
                 LIMIT 5
             """)
