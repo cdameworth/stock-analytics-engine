@@ -32,23 +32,99 @@ MARKET_INTERVAL_MINUTES = int(os.environ.get('MARKET_INTERVAL_MINUTES', '5'))
 EVENING_INTERVAL_MINUTES = int(os.environ.get('EVENING_INTERVAL_MINUTES', '10'))
 PER_CALL_TIMEOUT = int(os.environ.get('PER_CALL_TIMEOUT', '8'))
 
-# Stock universe (simplified for Railway)
-MAJOR_INDEXES = ['SPY', 'QQQ', 'IWM', 'DIA', 'VTI']
+# Stock universe - expanded for comprehensive market coverage
+# Target: ~500 symbols, each called once per day
+# With 500 API calls/day limit, we process ~20-25 symbols per hour across market hours
 
-POPULAR_STOCKS = [
-    # Mega Cap
-    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B',
-    # Tech
-    'AMD', 'INTC', 'ORCL', 'CRM', 'ADBE', 'NFLX', 'UBER', 'SHOP',
-    # Financial
-    'JPM', 'BAC', 'WFC', 'GS', 'MS', 'V', 'MA', 'PYPL',
-    # Healthcare
-    'JNJ', 'PFE', 'UNH', 'ABBV', 'MRK', 'LLY', 'BMY', 'AMGN',
-    # Consumer
-    'WMT', 'HD', 'MCD', 'SBUX', 'NKE', 'COST', 'TGT', 'LOW',
-    # Energy/Industrial
-    'XOM', 'CVX', 'BA', 'CAT', 'GE', 'HON', 'UNP', 'LMT'
+MAJOR_INDEXES = [
+    # US Market ETFs
+    'SPY', 'QQQ', 'IWM', 'DIA', 'VTI', 'VOO', 'VXX', 'ARKK', 'XLF', 'XLE',
+    'XLK', 'XLV', 'XLI', 'XLC', 'XLY', 'XLP', 'XLB', 'XLU', 'XLRE',
+    # International/Bond ETFs
+    'EEM', 'EFA', 'VWO', 'TLT', 'LQD', 'HYG', 'GLD', 'SLV', 'USO'
 ]
+
+# Expanded stock universe - S&P 500 components + popular growth stocks
+POPULAR_STOCKS = [
+    # === MEGA CAP (Market Cap > $200B) ===
+    'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B',
+    'UNH', 'JNJ', 'V', 'XOM', 'JPM', 'WMT', 'MA', 'PG', 'HD', 'CVX',
+    'LLY', 'MRK', 'ABBV', 'KO', 'PEP', 'COST', 'AVGO', 'TMO', 'MCD', 'CSCO',
+    'ACN', 'ABT', 'DHR', 'WFC', 'CRM', 'LIN', 'TXN', 'PM', 'VZ', 'NEE',
+
+    # === LARGE CAP TECH ===
+    'ADBE', 'AMD', 'INTC', 'ORCL', 'QCOM', 'IBM', 'NOW', 'INTU', 'AMAT', 'ADI',
+    'LRCX', 'MU', 'SNPS', 'CDNS', 'KLAC', 'MRVL', 'NXPI', 'FTNT', 'PANW', 'CRWD',
+    'DDOG', 'ZS', 'OKTA', 'NET', 'SNOW', 'PLTR', 'PATH', 'MDB', 'TEAM', 'SPLK',
+
+    # === LARGE CAP FINANCIALS ===
+    'BAC', 'GS', 'MS', 'C', 'AXP', 'BLK', 'SCHW', 'CB', 'MMC', 'PNC',
+    'USB', 'TFC', 'AIG', 'MET', 'PRU', 'AFL', 'ALL', 'TRV', 'CME', 'ICE',
+    'SPGI', 'MCO', 'MSCI', 'FIS', 'FISV', 'GPN', 'ADP', 'PYPL', 'SQ', 'COIN',
+
+    # === LARGE CAP HEALTHCARE ===
+    'PFE', 'BMY', 'AMGN', 'GILD', 'VRTX', 'REGN', 'MRNA', 'BIIB', 'ILMN', 'DXCM',
+    'ISRG', 'SYK', 'BDX', 'MDT', 'ZBH', 'BSX', 'EW', 'A', 'IQV', 'MTD',
+    'CI', 'ELV', 'HUM', 'CNC', 'MCK', 'CAH', 'ABC', 'CVS', 'WBA', 'HCA',
+
+    # === LARGE CAP CONSUMER ===
+    'NKE', 'SBUX', 'TGT', 'LOW', 'TJX', 'ROST', 'DG', 'DLTR', 'ORLY', 'AZO',
+    'BBY', 'ULTA', 'LULU', 'GPS', 'KSS', 'M', 'JWN', 'DRI', 'CMG', 'YUM',
+    'DPZ', 'WING', 'SHAK', 'DASH', 'ABNB', 'BKNG', 'EXPE', 'MAR', 'HLT', 'H',
+
+    # === LARGE CAP INDUSTRIAL ===
+    'BA', 'CAT', 'GE', 'HON', 'UNP', 'LMT', 'RTX', 'DE', 'MMM', 'UPS',
+    'FDX', 'CSX', 'NSC', 'WM', 'RSG', 'EMR', 'ETN', 'ITW', 'ROK', 'PH',
+    'CMI', 'PCAR', 'ODFL', 'JBHT', 'XPO', 'CHRW', 'EXPD', 'DAL', 'UAL', 'LUV',
+
+    # === LARGE CAP ENERGY ===
+    'COP', 'EOG', 'SLB', 'PXD', 'MPC', 'VLO', 'PSX', 'OXY', 'HAL', 'DVN',
+    'FANG', 'HES', 'APA', 'MRO', 'KMI', 'WMB', 'OKE', 'ET', 'EPD', 'TRGP',
+
+    # === LARGE CAP UTILITIES/REITS ===
+    'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE', 'XEL', 'ED', 'WEC', 'ES',
+    'PEG', 'AWK', 'AEE', 'CMS', 'DTE', 'FE', 'PPL', 'EVRG', 'NI', 'AES',
+    'AMT', 'PLD', 'CCI', 'EQIX', 'PSA', 'DLR', 'O', 'WELL', 'AVB', 'EQR',
+
+    # === LARGE CAP MATERIALS ===
+    'APD', 'SHW', 'ECL', 'DD', 'DOW', 'NEM', 'FCX', 'NUE', 'VMC', 'MLM',
+    'PPG', 'ALB', 'LYB', 'EMN', 'CE', 'CF', 'MOS', 'FMC', 'IFF', 'CTVA',
+
+    # === LARGE CAP COMMUNICATIONS ===
+    'NFLX', 'DIS', 'CMCSA', 'T', 'TMUS', 'CHTR', 'PARA', 'WBD', 'FOX', 'FOXA',
+    'TTWO', 'EA', 'ATVI', 'RBLX', 'U', 'MTCH', 'SPOT', 'PINS', 'SNAP', 'TWTR',
+
+    # === MID CAP GROWTH ===
+    'UBER', 'LYFT', 'SHOP', 'ETSY', 'W', 'CHWY', 'PTON', 'HOOD', 'SOFI', 'UPST',
+    'AFRM', 'BILL', 'HUBS', 'TWLO', 'TTD', 'ROKU', 'ZM', 'DOCU', 'VEEV', 'PAYC',
+    'PCTY', 'WDAY', 'RNG', 'ZI', 'ESTC', 'CFLT', 'GTLB', 'DOCN', 'FROG', 'S',
+
+    # === MID CAP VALUE ===
+    'F', 'GM', 'RIVN', 'LCID', 'NIO', 'XPEV', 'LI', 'FSR', 'GOEV', 'RIDE',
+    'AAL', 'JBLU', 'ALK', 'SAVE', 'HA', 'SKYW', 'MESA', 'ALGT', 'LTM', 'RYAAY',
+    'CLF', 'X', 'AA', 'STLD', 'RS', 'ATI', 'CMC', 'TX', 'MT', 'VALE',
+
+    # === SMALL CAP SPECULATIVE ===
+    'AMC', 'GME', 'BB', 'BBBY', 'EXPR', 'KOSS', 'NAKD', 'SNDL', 'TLRY', 'CGC',
+    'ACB', 'CRON', 'HEXO', 'OGI', 'VFF', 'GRWG', 'CURLF', 'TCNNF', 'GTBIF', 'CRLBF',
+
+    # === BIOTECH/PHARMA ===
+    'SGEN', 'ALNY', 'BMRN', 'INCY', 'EXEL', 'SRPT', 'IONS', 'NBIX', 'RARE', 'FOLD',
+    'ARWR', 'CRSP', 'EDIT', 'NTLA', 'BEAM', 'VERV', 'BLUE', 'SGMO', 'FATE', 'KYMR',
+
+    # === SEMICONDUCTORS ===
+    'ASML', 'TSM', 'SOXL', 'SOXS', 'ON', 'SWKS', 'QRVO', 'MPWR', 'ALGM', 'WOLF',
+    'CRUS', 'SLAB', 'DIOD', 'AMBA', 'SITM', 'POWI', 'SMTC', 'AOSL', 'FORM', 'RMBS',
+
+    # === CYBERSECURITY ===
+    'S', 'CYBR', 'TENB', 'VRNS', 'QLYS', 'RPD', 'SAIL', 'SWI', 'NLOK', 'FEYE',
+
+    # === AI/ML FOCUSED ===
+    'AI', 'UPST', 'PATH', 'BBAI', 'SOUN', 'GFAI', 'PRCT', 'AITX', 'VERI', 'AISP'
+]
+
+# Remove duplicates while preserving order
+POPULAR_STOCKS = list(dict.fromkeys(POPULAR_STOCKS))
 
 # Database connection
 db_conn = None
@@ -545,31 +621,73 @@ def log_ingestion_run(run_id, attempted, succeeded, duration, errors):
         logger.log_error(f"Log ingestion error: {e}")
 
 
+def get_symbols_not_updated_today():
+    """Get symbols that haven't been updated today from database."""
+    if not db_conn:
+        return []
+
+    try:
+        with db_conn.cursor() as cur:
+            # Get symbols updated today
+            cur.execute("""
+                SELECT DISTINCT symbol FROM latest_prices
+                WHERE updated_at::date = CURRENT_DATE
+            """)
+            updated_today = {row[0] for row in cur.fetchall()}
+
+            # Return symbols not yet updated
+            all_symbols = set(MAJOR_INDEXES + POPULAR_STOCKS)
+            return list(all_symbols - updated_today)
+    except Exception as e:
+        logger.log_error(f"Error getting symbols not updated today: {e}")
+        return []
+
+
 def run_data_ingestion(max_symbols=None):
-    """Execute data ingestion cycle."""
+    """Execute data ingestion cycle with smart rotation.
+
+    Strategy: Process symbols that haven't been updated today first.
+    This ensures each symbol gets updated once per day across the
+    available API calls (500/day free tier).
+
+    With ~500 symbols and 500 API calls/day:
+    - Each symbol gets called ~1x per day
+    - Market hours (9am-4pm = 7 hours) = ~70 calls/hour
+    - Running every 5 min = ~6 symbols per run during market hours
+    """
     if max_symbols is None:
         max_symbols = MAX_SYMBOLS_PER_RUN
 
     start_time = time.time()
     run_id = f"run_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
 
-    logger.log_info(f"Starting data ingestion cycle (max_symbols={max_symbols})")
+    # Get symbols that need updating today
+    pending_symbols = get_symbols_not_updated_today()
 
-    # Determine symbols to process
-    current_hour = datetime.utcnow().hour
-    rotation_seed = current_hour // 4
+    if pending_symbols:
+        logger.log_info(f"Found {len(pending_symbols)} symbols not yet updated today")
+    else:
+        # All symbols updated - use time-based rotation for refresh
+        pending_symbols = MAJOR_INDEXES + POPULAR_STOCKS
+        logger.log_info(f"All symbols updated today - refreshing with rotation")
 
-    # Always include some indexes
-    idx_count = min(2, max_symbols // 3)
-    idx_symbols = MAJOR_INDEXES[:idx_count]
+    # Prioritize: indexes first, then by alphabetical for determinism
+    indexes_pending = [s for s in pending_symbols if s in MAJOR_INDEXES]
+    stocks_pending = [s for s in pending_symbols if s not in MAJOR_INDEXES]
+    stocks_pending.sort()  # Alphabetical for deterministic ordering
 
-    # Rotate through stocks
+    # Always include 1-2 indexes per run
+    idx_count = min(2, len(indexes_pending), max_symbols // 3)
+    idx_symbols = indexes_pending[:idx_count]
+
+    # Fill remaining with stocks
     remaining = max_symbols - len(idx_symbols)
-    stock_start = (rotation_seed * remaining) % len(POPULAR_STOCKS)
-    rotated = POPULAR_STOCKS[stock_start:] + POPULAR_STOCKS[:stock_start]
-    stock_symbols = rotated[:remaining]
+    stock_symbols = stocks_pending[:remaining]
 
     all_symbols = idx_symbols + stock_symbols
+
+    logger.log_info(f"Starting data ingestion cycle: {len(all_symbols)} symbols "
+                   f"(indexes: {len(idx_symbols)}, stocks: {len(stock_symbols)})")
 
     succeeded = 0
     errors = []
