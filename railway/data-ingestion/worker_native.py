@@ -27,7 +27,7 @@ ALPHA_VANTAGE_API_KEY = os.environ.get('ALPHA_VANTAGE_API_KEY', '')
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 REDIS_URL = os.environ.get('REDIS_URL', '')
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'production')
-MAX_SYMBOLS_PER_RUN = int(os.environ.get('MAX_SYMBOLS_PER_RUN', '3'))
+MAX_SYMBOLS_PER_RUN = int(os.environ.get('MAX_SYMBOLS_PER_RUN', '5'))
 MARKET_INTERVAL_MINUTES = int(os.environ.get('MARKET_INTERVAL_MINUTES', '5'))
 EVENING_INTERVAL_MINUTES = int(os.environ.get('EVENING_INTERVAL_MINUTES', '10'))
 PER_CALL_TIMEOUT = int(os.environ.get('PER_CALL_TIMEOUT', '8'))
@@ -133,6 +133,23 @@ def init_database():
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_price_predictions_symbol ON price_predictions(symbol);
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS time_predictions (
+                    id SERIAL PRIMARY KEY,
+                    symbol VARCHAR(10) NOT NULL,
+                    prediction_date DATE NOT NULL,
+                    target_price DECIMAL(12,4),
+                    predicted_days INT,
+                    actual_days INT,
+                    confidence DECIMAL(5,4),
+                    model_version VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(symbol, prediction_date, model_version)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_time_predictions_symbol ON time_predictions(symbol);
             """)
 
             cur.execute("""
@@ -460,6 +477,59 @@ def store_recommendation(symbol, rec):
         return False
 
 
+def store_price_prediction(symbol, rec, data):
+    """Store price prediction for validation tracking."""
+    if not db_conn or not rec or not data:
+        return False
+
+    try:
+        with db_conn.cursor() as cur:
+            # Store prediction with current price for later validation
+            cur.execute("""
+                INSERT INTO price_predictions
+                    (symbol, prediction_date, predicted_price, confidence,
+                     model_version, created_at)
+                VALUES (%s, CURRENT_DATE, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (symbol, prediction_date, model_version)
+                DO UPDATE SET
+                    predicted_price = EXCLUDED.predicted_price,
+                    confidence = EXCLUDED.confidence,
+                    created_at = CURRENT_TIMESTAMP
+            """, (
+                symbol,
+                rec['target_price'],
+                rec['confidence'],
+                'momentum_v1'
+            ))
+
+            # Also store time prediction (days to reach target)
+            # Simple estimate: 30 days for 5% target move
+            cur.execute("""
+                INSERT INTO time_predictions
+                    (symbol, prediction_date, target_price, predicted_days,
+                     confidence, model_version, created_at)
+                VALUES (%s, CURRENT_DATE, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (symbol, prediction_date, model_version)
+                DO UPDATE SET
+                    target_price = EXCLUDED.target_price,
+                    predicted_days = EXCLUDED.predicted_days,
+                    confidence = EXCLUDED.confidence,
+                    created_at = CURRENT_TIMESTAMP
+            """, (
+                symbol,
+                rec['target_price'],
+                30,  # Default 30 days to reach target
+                rec['confidence'],
+                'momentum_v1'
+            ))
+
+        logger.log_info(f"Stored prediction for {symbol}: target=${rec['target_price']:.2f}")
+        return True
+    except Exception as e:
+        logger.log_error(f"Store prediction error for {symbol}: {e}")
+        return False
+
+
 def log_ingestion_run(run_id, attempted, succeeded, duration, errors):
     """Log ingestion run metrics to database."""
     if not db_conn:
@@ -524,6 +594,8 @@ def run_data_ingestion(max_symbols=None):
                 rec = generate_recommendation(symbol, processed)
                 if rec:
                     store_recommendation(symbol, rec)
+                    # Also store price prediction for validation tracking
+                    store_price_prediction(symbol, rec, processed)
                 succeeded += 1
                 logger.log_info(f"Processed {symbol}: ${processed['price']:.2f}")
             else:
