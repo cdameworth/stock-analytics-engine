@@ -56,21 +56,21 @@ POPULAR_STOCKS = [
     # === LARGE CAP TECH ===
     'ADBE', 'AMD', 'INTC', 'ORCL', 'QCOM', 'IBM', 'NOW', 'INTU', 'AMAT', 'ADI',
     'LRCX', 'MU', 'SNPS', 'CDNS', 'KLAC', 'MRVL', 'NXPI', 'FTNT', 'PANW', 'CRWD',
-    'DDOG', 'ZS', 'OKTA', 'NET', 'SNOW', 'PLTR', 'PATH', 'MDB', 'TEAM', 'SPLK',
+    'DDOG', 'ZS', 'OKTA', 'NET', 'SNOW', 'PLTR', 'PATH', 'MDB', 'TEAM',
 
     # === LARGE CAP FINANCIALS ===
-    'BAC', 'GS', 'MS', 'C', 'AXP', 'BLK', 'SCHW', 'CB', 'MMC', 'PNC',
+    'BAC', 'GS', 'MS', 'C', 'AXP', 'BLK', 'SCHW', 'CB', 'PNC',
     'USB', 'TFC', 'AIG', 'MET', 'PRU', 'AFL', 'ALL', 'TRV', 'CME', 'ICE',
-    'SPGI', 'MCO', 'MSCI', 'FIS', 'FISV', 'GPN', 'ADP', 'PYPL', 'SQ', 'COIN',
+    'SPGI', 'MCO', 'MSCI', 'FIS', 'FISV', 'GPN', 'ADP', 'PYPL', 'COIN',
 
     # === LARGE CAP HEALTHCARE ===
     'PFE', 'BMY', 'AMGN', 'GILD', 'VRTX', 'REGN', 'MRNA', 'BIIB', 'ILMN', 'DXCM',
     'ISRG', 'SYK', 'BDX', 'MDT', 'ZBH', 'BSX', 'EW', 'A', 'IQV', 'MTD',
-    'CI', 'ELV', 'HUM', 'CNC', 'MCK', 'CAH', 'ABC', 'CVS', 'WBA', 'HCA',
+    'CI', 'ELV', 'HUM', 'CNC', 'MCK', 'CAH', 'COR', 'CVS', 'WBA', 'HCA',
 
     # === LARGE CAP CONSUMER ===
     'NKE', 'SBUX', 'TGT', 'LOW', 'TJX', 'ROST', 'DG', 'DLTR', 'ORLY', 'AZO',
-    'BBY', 'ULTA', 'LULU', 'GPS', 'KSS', 'M', 'JWN', 'DRI', 'CMG', 'YUM',
+    'BBY', 'ULTA', 'LULU', 'GAP', 'KSS', 'M', 'JWN', 'DRI', 'CMG', 'YUM',
     'DPZ', 'WING', 'SHAK', 'DASH', 'ABNB', 'BKNG', 'EXPE', 'MAR', 'HLT', 'H',
 
     # === LARGE CAP INDUSTRIAL ===
@@ -93,7 +93,7 @@ POPULAR_STOCKS = [
 
     # === LARGE CAP COMMUNICATIONS ===
     'NFLX', 'DIS', 'CMCSA', 'T', 'TMUS', 'CHTR', 'PARA', 'WBD', 'FOX', 'FOXA',
-    'TTWO', 'EA', 'ATVI', 'RBLX', 'U', 'MTCH', 'SPOT', 'PINS', 'SNAP', 'TWTR',
+    'TTWO', 'EA', 'RBLX', 'U', 'MTCH', 'SPOT', 'PINS', 'SNAP',
 
     # === MID CAP GROWTH ===
     'UBER', 'LYFT', 'SHOP', 'ETSY', 'W', 'CHWY', 'PTON', 'HOOD', 'SOFI', 'UPST',
@@ -101,12 +101,12 @@ POPULAR_STOCKS = [
     'PCTY', 'WDAY', 'RNG', 'ZI', 'ESTC', 'CFLT', 'GTLB', 'DOCN', 'FROG', 'S',
 
     # === MID CAP VALUE ===
-    'F', 'GM', 'RIVN', 'LCID', 'NIO', 'XPEV', 'LI', 'FSR', 'GOEV', 'RIDE',
-    'AAL', 'JBLU', 'ALK', 'SAVE', 'HA', 'SKYW', 'MESA', 'ALGT', 'LTM', 'RYAAY',
+    'F', 'GM', 'RIVN', 'LCID', 'NIO', 'XPEV', 'LI', 'FSR', 'GOEV',
+    'AAL', 'JBLU', 'ALK', 'SAVE', 'HA', 'SKYW', 'ALGT', 'LTM', 'RYAAY',
     'CLF', 'X', 'AA', 'STLD', 'RS', 'ATI', 'CMC', 'TX', 'MT', 'VALE',
 
     # === SMALL CAP SPECULATIVE ===
-    'AMC', 'GME', 'BB', 'BBBY', 'EXPR', 'KOSS', 'NAKD', 'SNDL', 'TLRY', 'CGC',
+    'AMC', 'GME', 'BB', 'EXPR', 'KOSS', 'SNDL', 'TLRY', 'CGC',
     'ACB', 'CRON', 'HEXO', 'OGI', 'VFF', 'GRWG', 'CURLF', 'TCNNF', 'GTBIF', 'CRLBF',
 
     # === BIOTECH/PHARMA ===
@@ -118,7 +118,7 @@ POPULAR_STOCKS = [
     'CRUS', 'SLAB', 'DIOD', 'AMBA', 'SITM', 'POWI', 'SMTC', 'AOSL', 'FORM', 'RMBS',
 
     # === CYBERSECURITY ===
-    'CYBR', 'TENB', 'VRNS', 'QLYS', 'RPD', 'SAIL', 'SWI', 'NLOK', 'FEYE',
+    'CYBR', 'TENB', 'VRNS', 'QLYS', 'RPD', 'SAIL', 'SWI', 'GEN',
 
     # === AI/ML FOCUSED ===
     'AI', 'BBAI', 'SOUN', 'GFAI', 'PRCT', 'AITX', 'VERI', 'AISP'
