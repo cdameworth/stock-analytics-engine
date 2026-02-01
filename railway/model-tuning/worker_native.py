@@ -120,27 +120,29 @@ def get_predictions_to_validate(lookback_days=7):
             # Uses price_predictions table which stores historical predictions
             # Join with stock_quotes to get price at prediction time
             # Note: stock_quotes stores daily prices with trading_day column
+            # Note: price_predictions table has created_at (timestamp), not timestamp column
+            # Also uses prediction_date (date) for the date portion
             cur.execute("""
                 SELECT pp.symbol,
                        COALESCE(sr.recommendation_type, 'HOLD') as recommendation,
                        COALESCE(pp.confidence, 0.5) as confidence,
                        pp.predicted_price as target_price,
                        COALESCE(sq.price, lp.price) as original_price,
-                       COALESCE(pp.timestamp, pp.created_at) as updated_at
+                       pp.created_at as updated_at
                 FROM price_predictions pp
                 LEFT JOIN stock_recommendations sr ON sr.symbol = pp.symbol
                 LEFT JOIN latest_prices lp ON lp.symbol = pp.symbol
                 LEFT JOIN stock_quotes sq ON sq.symbol = pp.symbol
-                    AND sq.trading_day = COALESCE(pp.timestamp, pp.created_at)::date
-                WHERE COALESCE(pp.timestamp, pp.created_at) < NOW() - INTERVAL '%s days'
-                AND COALESCE(pp.timestamp, pp.created_at) > NOW() - INTERVAL '%s days'
+                    AND sq.trading_day = pp.prediction_date
+                WHERE pp.created_at < NOW() - INTERVAL '%s days'
+                AND pp.created_at > NOW() - INTERVAL '%s days'
                 AND (pp.validation_status IS NULL OR pp.validation_status = 'pending')
                 AND NOT EXISTS (
                     SELECT 1 FROM prediction_validations pv
                     WHERE pv.symbol = pp.symbol
-                    AND pv.prediction_date = COALESCE(pp.timestamp, pp.created_at)::date
+                    AND pv.prediction_date = pp.prediction_date
                 )
-                ORDER BY COALESCE(pp.timestamp, pp.created_at) DESC
+                ORDER BY pp.created_at DESC
                 LIMIT 100
             """, (lookback_days - 2, lookback_days + 5))
 
